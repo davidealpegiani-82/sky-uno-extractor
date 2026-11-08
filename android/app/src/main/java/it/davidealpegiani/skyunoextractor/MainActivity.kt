@@ -9,6 +9,7 @@ import android.os.Bundle
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.widget.FrameLayout
 import android.widget.Button
 import android.widget.CheckBox
 import android.widget.LinearLayout
@@ -17,6 +18,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
@@ -44,6 +46,7 @@ class MainActivity : Activity() {
     private lateinit var selectedHeading: TextView
     private lateinit var otherHeading: TextView
     private lateinit var playerDock: LinearLayout
+    private lateinit var fullscreenContainer: FrameLayout
     private lateinit var status: TextView
     private lateinit var count: TextView
     private lateinit var playerView: PlayerView
@@ -71,7 +74,11 @@ class MainActivity : Activity() {
         buildInterface()
         player.addListener(object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
-                status.text = "Errore di riproduzione: ${error.errorCodeName}. Il flusso potrebbe essere offline o non compatibile."
+                val detail = generateSequence(error as Throwable?) { it.cause }
+                    .take(4)
+                    .mapNotNull { it.message?.takeIf { message -> message.isNotBlank() } }
+                    .joinToString(" → ")
+                status.text = "Errore ${error.errorCodeName} (${error.errorCode}): " + detail.ifBlank { "flusso interrotto o non compatibile" }
             }
             override fun onPlaybackStateChanged(playbackState: Int) {
                 if (playbackState == Player.STATE_BUFFERING) status.text = "Caricamento del flusso…"
@@ -99,7 +106,8 @@ class MainActivity : Activity() {
         val channelName = data.getQueryParameter("name")?.takeIf { it.isNotBlank() } ?: "Canale selezionato"
         status.text = "Apertura da player web: $channelName"
         try {
-            player.setMediaItem(MediaItem.fromUri(streamUrl))
+            val mediaItem = MediaItem.Builder().setUri(streamUrl).setMimeType(MimeTypes.APPLICATION_M3U8).build()
+            player.setMediaItem(mediaItem)
             player.prepare()
             player.playWhenReady = true
         } catch (e: Exception) {
@@ -110,6 +118,7 @@ class MainActivity : Activity() {
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
 
     private fun buildInterface() {
+        fullscreenContainer = FrameLayout(this)
         mainContainer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(BG)
@@ -413,7 +422,9 @@ class MainActivity : Activity() {
         val channel = channels.getOrNull(index) ?: return
         status.text = "Avvio: ${channel.name}"
         try {
-            player.setMediaItem(MediaItem.fromUri(channel.url))
+            // Dichiarazione HLS esplicita anche per URL con token o senza estensione .m3u8.
+            val mediaItem = MediaItem.Builder().setUri(channel.url).setMimeType(MimeTypes.APPLICATION_M3U8).build()
+            player.setMediaItem(mediaItem)
             player.prepare()
             player.playWhenReady = true
         } catch (e: Exception) {
@@ -481,32 +492,40 @@ class MainActivity : Activity() {
     }
 
     private fun toggleFullscreen() {
-        fullscreen = !fullscreen
-        if (fullscreen) {
-            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-            window.decorView.systemUiVisibility = (
-                View.SYSTEM_UI_FLAG_FULLSCREEN or
-                View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
-                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-            )
+        if (!fullscreen) {
+            // Contenitore dedicato: la PlayerView non diventa direttamente la root.
             (playerView.parent as? ViewGroup)?.removeView(playerView)
-            setContentView(playerView)
-            playerView.layoutParams = ViewGroup.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT
-            )
+            fullscreenContainer.removeAllViews()
+            fullscreenContainer.setBackgroundColor(Color.BLACK)
+            fullscreenContainer.addView(playerView, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+            val exitButton = Button(this).apply {
+                text = "✕"
+                textSize = 18f
+                isAllCaps = false
+                setTextColor(Color.WHITE)
+                setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xCC26364D.toInt()))
+                setOnClickListener { toggleFullscreen() }
+            }
+            fullscreenContainer.addView(exitButton, FrameLayout.LayoutParams(dp(52), dp(48), Gravity.TOP or Gravity.END).apply { topMargin = dp(12); marginEnd = dp(12) })
+            fullscreen = true
+            setContentView(fullscreenContainer)
+            window.decorView.systemUiVisibility = (View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY)
+            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
         } else {
+            fullscreen = false
             requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
             window.decorView.systemUiVisibility = 0
+            (playerView.parent as? ViewGroup)?.removeView(playerView)
+            fullscreenContainer.removeAllViews()
             setContentView(mainContainer)
-            if (playerView.parent == null) {
-                playerDock.addView(playerView, LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, dp(176)
-                ))
-            }
+            playerDock.addView(playerView, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(176)))
         }
     }
 
+    @Deprecated("Legacy back callback retained for broad Android compatibility")
+    override fun onBackPressed() {
+        if (fullscreen) toggleFullscreen() else super.onBackPressed()
+    }
     private fun toast(message: String) = Toast.makeText(this, message, Toast.LENGTH_LONG).show()
 
     override fun onDestroy() {
