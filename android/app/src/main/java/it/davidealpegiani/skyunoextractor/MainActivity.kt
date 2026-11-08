@@ -8,6 +8,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -23,7 +24,9 @@ import androidx.fragment.app.FragmentActivity
 import androidx.mediarouter.app.MediaRouteButton
 import androidx.media3.cast.CastPlayer
 import androidx.media3.cast.MediaRouteButtonFactory
+import androidx.media3.common.C
 import androidx.media3.common.DeviceInfo
+import androidx.media3.common.MediaLoadData
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
@@ -31,13 +34,16 @@ import androidx.media3.common.MimeTypes
 import androidx.media3.common.Player
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
+import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.hls.HlsMediaSource
+import androidx.media3.exoplayer.source.LoadEventInfo
 import androidx.media3.ui.PlayerView
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedReader
+import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 import java.nio.charset.StandardCharsets
@@ -74,6 +80,8 @@ class MainActivity : FragmentActivity() {
     private var playbackRetryCount = 0
     private var playbackRetryTask: Runnable? = null
     private var stablePlaybackTask: Runnable? = null
+    // Invalida i tentativi appartenenti al canale precedente.
+    private var playbackGeneration = 0
 
     companion object {
         private const val PICK_FILE = 4101
@@ -93,10 +101,10 @@ class MainActivity : FragmentActivity() {
         // per assorbire oscillazioni di rete senza accumulare minuti di ritardo.
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                20_000, // buffer minimo
-                60_000, // buffer massimo
-                3_000,  // avvio iniziale
-                6_000   // ripresa dopo un rebuffer
+                30_000, // margine minimo per assorbire oscillazioni di rete
+                90_000, // buffer massimo: più tolleranza senza accumulare minuti
+                5_000,  // avvio iniziale
+                8_000   // ripresa dopo un rebuffer
             )
             .setPrioritizeTimeOverSizeThresholds(true)
             .build()
@@ -108,12 +116,49 @@ class MainActivity : FragmentActivity() {
             .setAllowCrossProtocolRedirects(true)
 
         val hlsMediaSourceFactory = HlsMediaSource.Factory(httpDataSourceFactory)
-            .setLoadErrorHandlingPolicy(DefaultLoadErrorHandlingPolicy(5))
+            .setLoadErrorHandlingPolicy(DefaultLoadErrorHandlingPolicy(6))
 
         localPlayer = ExoPlayer.Builder(this)
             .setLoadControl(loadControl)
             .setMediaSourceFactory(hlsMediaSourceFactory)
             .build()
+
+        // Diagnostica HLS: registra manifest/segmenti e problemi HTTP senza
+        // esporre URL completi o token di accesso nei log.
+        localPlayer.addAnalyticsListener(object : AnalyticsListener {
+            override fun onLoadCompleted(
+                eventTime: AnalyticsListener.EventTime,
+                loadEventInfo: LoadEventInfo,
+                mediaLoadData: MediaLoadData
+            ) {
+                val kind = when (mediaLoadData.dataType) {
+                    C.DATA_TYPE_MANIFEST -> "manifest"
+                    C.DATA_TYPE_MEDIA -> "segment"
+                    else -> "type-" + mediaLoadData.dataType
+                }
+                Log.d(
+                    "SkyHLS",
+                    "load=" + kind + " host=" + (loadEventInfo.dataSpec.uri.host ?: "?") +
+                        " bytes=" + loadEventInfo.bytesLoaded +
+                        " durationMs=" + loadEventInfo.loadDurationMs
+                )
+            }
+
+            override fun onLoadError(
+                eventTime: AnalyticsListener.EventTime,
+                loadEventInfo: LoadEventInfo,
+                mediaLoadData: MediaLoadData,
+                error: IOException,
+                wasCanceled: Boolean
+            ) {
+                Log.w(
+                    "SkyHLS",
+                    "load error host=" + (loadEventInfo.dataSpec.uri.host ?: "?") +
+                        " canceled=" + wasCanceled + " " +
+                        error.javaClass.simpleName + ": " + error.message
+                )
+            }
+        })
         // Google Cast è opzionale: un problema del framework Cast non deve
         // impedire l'avvio dell'estrattore o la riproduzione locale.
         player = try {
@@ -134,16 +179,30 @@ class MainActivity : FragmentActivity() {
                     .take(4)
                     .mapNotNull { it.message?.takeIf { message -> message.isNotBlank() } }
                     .joinToString(" → ")
+                Log.e(
+                    "SkyHLS",
+                    "player error code=" + error.errorCodeName +
+                        " positionMs=" + player.currentPosition +
+                        " bufferedMs=" + player.totalBufferedDuration +
+                        " liveOffsetMs=" + player.currentLiveOffset,
+                    error
+                )
                 val retryable = error.errorCodeName.contains("IO_") ||
                     error.errorCodeName.contains("BEHIND_LIVE_WINDOW")
-                if (retryable && playbackRetryCount < 3) {
-                    val delays = longArrayOf(2_000L, 5_000L, 10_000L)
+                if (retryable && playbackRetryCount < 5) {
+                    val delays = longArrayOf(2_000L, 4_000L, 8_000L, 12_000L, 15_000L)
                     val delay = delays[playbackRetryCount++]
-                    status.text = "Connessione instabile. Nuovo tentativo tra ${delay / 1000} s…"
+                    val failedGeneration = playbackGeneration
+                    status.text = "Connessione instabile. Nuovo tentativo tra " + (delay / 1000) + " s…"
                     playbackRetryTask?.let { retryHandler.removeCallbacks(it) }
                     val task = Runnable {
-                        if (!isFinishing && !isDestroyed && ::player.isInitialized) {
+                        if (!isFinishing && !isDestroyed && ::player.isInitialized &&
+                            failedGeneration == playbackGeneration
+                        ) {
+                            // Un seek è necessario solo se ExoPlayer segnala esplicitamente
+                            // BEHIND_LIVE_WINDOW: mai durante un normale buffering.
                             if (error.errorCodeName.contains("BEHIND_LIVE_WINDOW")) {
+                                Log.w("SkyHLS", "live window persa: riallineamento al punto live predefinito")
                                 player.seekToDefaultPosition()
                             }
                             player.prepare()
@@ -198,6 +257,7 @@ class MainActivity : FragmentActivity() {
         }
         val channelName = data.getQueryParameter("name")?.takeIf { it.isNotBlank() } ?: "Canale selezionato"
         status.text = "Apertura da player web: $channelName"
+        playbackGeneration++
         try {
             playbackRetryTask?.let { retryHandler.removeCallbacks(it) }
             playbackRetryTask = null
@@ -549,6 +609,7 @@ class MainActivity : FragmentActivity() {
 
     private fun playChannel(index: Int) {
         val channel = channels.getOrNull(index) ?: return
+        playbackGeneration++
         status.text = "Avvio: ${channel.name}"
         try {
             playbackRetryTask?.let { retryHandler.removeCallbacks(it) }
