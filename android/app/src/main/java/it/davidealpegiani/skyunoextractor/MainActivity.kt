@@ -125,10 +125,10 @@ class MainActivity : FragmentActivity() {
         // senza richiedere attese eccessive all'avvio.
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                45_000, // obiettivo minimo di precaricamento
-                120_000, // tetto massimo per oscillazioni prolungate
+                30_000, // margine di precaricamento coerente con il ritardo live target
+                90_000, // margine massimo per oscillazioni prolungate
                 6_000, // avvio iniziale
-                12_000 // ripresa dopo un vero esaurimento del buffer
+                15_000 // ripresa dopo un vero esaurimento del buffer
             )
             .setPrioritizeTimeOverSizeThresholds(true)
             .build()
@@ -144,7 +144,7 @@ class MainActivity : FragmentActivity() {
         // Timeout espliciti e retry progressivi gestiti da Media3.
         val httpDataSourceFactory = DefaultHttpDataSource.Factory()
             .setConnectTimeoutMs(15_000)
-            .setReadTimeoutMs(25_000)
+            .setReadTimeoutMs(45_000)
             .setAllowCrossProtocolRedirects(true)
 
         val hlsMediaSourceFactory = HlsMediaSource.Factory(httpDataSourceFactory)
@@ -318,8 +318,8 @@ class MainActivity : FragmentActivity() {
                 .setMediaMetadata(MediaMetadata.Builder().setTitle(channelName).build())
                 .setLiveConfiguration(
                     MediaItem.LiveConfiguration.Builder()
-                        .setTargetOffsetMs(30_000)
-                        .setMinOffsetMs(20_000)
+                        .setTargetOffsetMs(45_000)
+                        .setMinOffsetMs(30_000)
                         .setMaxOffsetMs(90_000)
                         .setMinPlaybackSpeed(0.97f)
                         .setMaxPlaybackSpeed(1.03f)
@@ -692,8 +692,8 @@ class MainActivity : FragmentActivity() {
                 .setMediaMetadata(MediaMetadata.Builder().setTitle(channel.name).build())
                 .setLiveConfiguration(
                     MediaItem.LiveConfiguration.Builder()
-                        .setTargetOffsetMs(30_000)
-                        .setMinOffsetMs(20_000)
+                        .setTargetOffsetMs(45_000)
+                        .setMinOffsetMs(30_000)
                         .setMaxOffsetMs(90_000)
                         .setMinPlaybackSpeed(0.97f)
                         .setMaxPlaybackSpeed(1.03f)
