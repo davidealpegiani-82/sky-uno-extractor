@@ -563,7 +563,7 @@ video{width:100%;height:100%;object-fit:contain}
 <div class="top">SKY PLAYER</div>
 <div class="video"><video id="v" controls playsinline webkit-playsinline preload="auto"></video></div>
 <div class="status" id="status">Scegli un canale</div>
-<button id="castBtn" class="cast" hidden>📺 Trasmetti</button>
+<button id="castBtn" class="cast">📺 Trasmetti</button>
 <div class="list" id="list"></div>
 </div>
 <script>
@@ -572,8 +572,8 @@ const v=document.getElementById('v');
 const status=document.getElementById('status');
 const isAndroid=/Android/i.test(navigator.userAgent);
 let castContext=null;
-function initCast(){if(!window.cast||!cast.framework)return;castContext=cast.framework.CastContext.getInstance();castContext.setOptions({receiverApplicationId:chrome.cast.media.DEFAULT_MEDIA_RECEIVER_APP_ID,autoJoinPolicy:chrome.cast.AutoJoinPolicy.ORIGIN_SCOPED});const b=document.getElementById("castBtn");b.hidden=false;b.addEventListener("click",castCurrent);}
-window.addEventListener("sky-cast-ready",initCast);if(window.__skyCastAvailable)initCast();
+function initCast(){if(!window.cast||!cast.framework)return;castContext=cast.framework.CastContext.getInstance();castContext.setOptions({receiverApplicationId:chrome.cast.media.DEFAULT_MEDIA_RECEIVER_APP_ID,autoJoinPolicy:chrome.cast.AutoJoinPolicy.ORIGIN_SCOPED});const b=document.getElementById("castBtn");b.onclick=castCurrent;}
+document.getElementById("castBtn").onclick=function(){updateStatus("Google Cast richiede che Sky Player sia aperto da un indirizzo HTTPS in Google Chrome.");};window.addEventListener("sky-cast-ready",initCast);if(window.__skyCastAvailable)initCast();
 async function castCurrent(){if(active<0){updateStatus("Seleziona prima un canale da trasmettere.");return;}try{if(!castContext)throw new Error("Google Cast non disponibile. Apri Sky Player da una pagina HTTPS in Google Chrome.");if(!castContext.getCurrentSession())await castContext.requestSession();const session=castContext.getCurrentSession();if(!session)throw new Error("Connessione Cast non avviata.");const info=new chrome.cast.media.MediaInfo(C[active].url,"application/x-mpegURL");info.streamType=chrome.cast.media.StreamType.LIVE;info.metadata=new chrome.cast.media.GenericMediaMetadata();info.metadata.title=C[active].name;const request=new chrome.cast.media.LoadRequest(info);request.autoplay=true;await session.loadMedia(request);updateStatus("Trasmissione avviata: "+C[active].name);}catch(e){updateStatus("Google Cast: "+(e&&e.message?e.message:"operazione non riuscita"));}}
 let h=null,active=-1,retryTimer=null,watchdog=null,stableTimer=null,retries=0,lastTime=0,lastProgress=Date.now(),recovering=false;
 const retryDelays=[1000,2000,4000,8000,12000,15000];
