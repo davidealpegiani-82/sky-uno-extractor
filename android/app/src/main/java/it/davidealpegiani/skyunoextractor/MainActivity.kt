@@ -63,6 +63,7 @@ class MainActivity : Activity() {
     private val retryHandler = Handler(Looper.getMainLooper())
     private var playbackRetryCount = 0
     private var playbackRetryTask: Runnable? = null
+    private var stablePlaybackTask: Runnable? = null
 
     companion object {
         private const val PICK_FILE = 4101
@@ -136,11 +137,17 @@ class MainActivity : Activity() {
             }
             override fun onPlaybackStateChanged(playbackState: Int) {
                 if (playbackState == Player.STATE_BUFFERING) status.text = "Caricamento del flusso…"
-                if (playbackState == Player.STATE_READY) {
-                    playbackRetryCount = 0
-                    playbackRetryTask?.let { retryHandler.removeCallbacks(it) }
-                    playbackRetryTask = null
-                    status.text = "Video pronto."
+                if (playbackState == Player.STATE_READY) status.text = "Video pronto."
+            }
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                stablePlaybackTask?.let { retryHandler.removeCallbacks(it) }
+                stablePlaybackTask = null
+                if (isPlaying) {
+                    val task = Runnable {
+                        if (::player.isInitialized && player.isPlaying) playbackRetryCount = 0
+                    }
+                    stablePlaybackTask = task
+                    retryHandler.postDelayed(task, 30_000L)
                 }
             }
         })
@@ -680,6 +687,8 @@ if(C.length)startChannel(0,false);
         // Il cambio orientamento è gestito da configChanges nel manifest.
         playbackRetryTask?.let { retryHandler.removeCallbacks(it) }
         playbackRetryTask = null
+        stablePlaybackTask?.let { retryHandler.removeCallbacks(it) }
+        stablePlaybackTask = null
         if (::player.isInitialized) player.pause()
         super.onStop()
     }
@@ -687,6 +696,7 @@ if(C.length)startChannel(0,false);
     override fun onDestroy() {
         playbackRetryTask?.let { retryHandler.removeCallbacks(it) }
         retryHandler.removeCallbacksAndMessages(null)
+        stablePlaybackTask = null
         if (::player.isInitialized) player.release()
         super.onDestroy()
     }
