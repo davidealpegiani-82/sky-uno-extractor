@@ -26,7 +26,6 @@ import androidx.media3.cast.CastPlayer
 import androidx.media3.cast.MediaRouteButtonFactory
 import androidx.media3.common.C
 import androidx.media3.common.DeviceInfo
-import androidx.media3.common.MediaLoadData
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
@@ -40,6 +39,7 @@ import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.hls.HlsMediaSource
 import androidx.media3.exoplayer.source.LoadEventInfo
+import androidx.media3.exoplayer.source.MediaLoadData
 import androidx.media3.ui.PlayerView
 import org.json.JSONArray
 import org.json.JSONObject
