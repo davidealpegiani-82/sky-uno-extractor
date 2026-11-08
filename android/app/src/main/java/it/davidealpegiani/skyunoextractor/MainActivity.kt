@@ -63,7 +63,9 @@ class MainActivity : FragmentActivity() {
     private lateinit var count: TextView
     private lateinit var playerView: PlayerView
     private lateinit var localPlayer: ExoPlayer
-    private lateinit var player: CastPlayer
+    private lateinit var player: Player
+    private var castPlayer: CastPlayer? = null
+    private var castInitWarning: String? = null
     private lateinit var scroll: ScrollView
     private var pendingHtml = ""
     private var fullscreen = false
@@ -111,9 +113,20 @@ class MainActivity : FragmentActivity() {
             .setLoadControl(loadControl)
             .setMediaSourceFactory(hlsMediaSourceFactory)
             .build()
-        player = CastPlayer.Builder(this).setLocalPlayer(localPlayer).build()
+        // Google Cast è opzionale: un problema del framework Cast non deve
+        // impedire l'avvio dell'estrattore o la riproduzione locale.
+        player = try {
+            CastPlayer.Builder(this).setLocalPlayer(localPlayer).build().also { castPlayer = it }
+        } catch (e: Exception) {
+            castInitWarning = e.message ?: e.javaClass.simpleName
+            localPlayer
+        } catch (e: LinkageError) {
+            castInitWarning = e.message ?: e.javaClass.simpleName
+            localPlayer
+        }
         player.playWhenReady = false
         buildInterface()
+        castInitWarning?.let { status.text = "Google Cast non disponibile; riproduzione locale attiva." }
         player.addListener(object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
                 val detail = generateSequence(error as Throwable?) { it.cause }
@@ -233,8 +246,18 @@ class MainActivity : FragmentActivity() {
             contentDescription = "Trasmetti a Google Cast"
             setBackgroundColor(Color.TRANSPARENT)
         }
-        dockHeader.addView(castButton, LinearLayout.LayoutParams(dp(48), dp(42)))
-        MediaRouteButtonFactory.setUpMediaRouteButton(this, castButton)
+        if (castPlayer != null) {
+            try {
+                dockHeader.addView(castButton, LinearLayout.LayoutParams(dp(48), dp(42)))
+                MediaRouteButtonFactory.setUpMediaRouteButton(this, castButton)
+            } catch (e: Exception) {
+                castInitWarning = e.message ?: e.javaClass.simpleName
+                castPlayer = null
+            } catch (e: LinkageError) {
+                castInitWarning = e.message ?: e.javaClass.simpleName
+                castPlayer = null
+            }
+        }
         val fullButton = buttonView("⛶ Schermo intero") { toggleFullscreen() }
         dockHeader.addView(fullButton, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(38)))
         playerDock.addView(dockHeader)
@@ -712,7 +735,7 @@ if(C.length)startChannel(0,false);
         playbackRetryTask = null
         stablePlaybackTask?.let { retryHandler.removeCallbacks(it) }
         stablePlaybackTask = null
-        if (::player.isInitialized && player.deviceInfo.playbackType == DeviceInfo.PLAYBACK_TYPE_LOCAL) player.pause()
+        if (::player.isInitialized && (castPlayer == null || player.deviceInfo.playbackType == DeviceInfo.PLAYBACK_TYPE_LOCAL)) player.pause()
         super.onStop()
     }
 
