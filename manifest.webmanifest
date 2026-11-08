@@ -1,7 +1,7 @@
 {
   "id": "./",
-  "name": "Sky Uno Extractor",
-  "short_name": "Sky Uno",
+  "name": "Sky Extractor",
+  "short_name": "Sky Extractor",
   "description": "Estrai le varianti Sky Uno dalle tue playlist e crea player HTML e link HTTPS.",
   "lang": "it-IT",
   "start_url": "./",
