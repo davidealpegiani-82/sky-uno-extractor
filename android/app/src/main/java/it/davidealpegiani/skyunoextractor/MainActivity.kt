@@ -24,6 +24,7 @@ import androidx.media3.cast.CastPlayer
 import androidx.media3.cast.MediaRouteButtonFactory
 import androidx.media3.common.DeviceInfo
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.Player
@@ -182,7 +183,7 @@ class MainActivity : FragmentActivity() {
             playbackRetryTask?.let { retryHandler.removeCallbacks(it) }
             playbackRetryTask = null
             playbackRetryCount = 0
-            val mediaItem = MediaItem.Builder().setUri(streamUrl).setMimeType(MimeTypes.APPLICATION_M3U8).build()
+            val mediaItem = MediaItem.Builder().setUri(streamUrl).setMimeType(MimeTypes.APPLICATION_M3U8).setMediaMetadata(MediaMetadata.Builder().setTitle(channelName).build()).build()
             player.setMediaItem(mediaItem)
             player.prepare()
             player.playWhenReady = true
@@ -507,7 +508,7 @@ class MainActivity : FragmentActivity() {
             playbackRetryTask = null
             playbackRetryCount = 0
             // Dichiarazione HLS esplicita anche per URL con token o senza estensione .m3u8.
-            val mediaItem = MediaItem.Builder().setUri(channel.url).setMimeType(MimeTypes.APPLICATION_M3U8).build()
+            val mediaItem = MediaItem.Builder().setUri(channel.url).setMimeType(MimeTypes.APPLICATION_M3U8).setMediaMetadata(MediaMetadata.Builder().setTitle(channel.name).build()).build()
             player.setMediaItem(mediaItem)
             player.prepare()
             player.playWhenReady = true
