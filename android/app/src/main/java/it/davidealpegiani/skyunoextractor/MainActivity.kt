@@ -34,6 +34,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
+import androidx.media3.exoplayer.DefaultLivePlaybackSpeedControl
 import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
 import androidx.media3.exoplayer.ExoPlayer
@@ -120,16 +121,24 @@ class MainActivity : FragmentActivity() {
         window.statusBarColor = BG
         window.navigationBarColor = BG
         window.decorView.systemUiVisibility = 0
-        // Buffer live equilibrato: avvio ragionevolmente rapido, ma più margine
-        // per assorbire oscillazioni di rete senza accumulare minuti di ritardo.
+        // Buffer conservativo per HLS live: mantiene più segmenti in anticipo,
+        // senza richiedere attese eccessive all'avvio.
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                30_000, // margine minimo per assorbire oscillazioni di rete
-                90_000, // buffer massimo: più tolleranza senza accumulare minuti
-                5_000,  // avvio iniziale
-                8_000   // ripresa dopo un rebuffer
+                45_000, // obiettivo minimo di precaricamento
+                120_000, // tetto massimo per oscillazioni prolungate
+                6_000, // avvio iniziale
+                12_000 // ripresa dopo un vero esaurimento del buffer
             )
             .setPrioritizeTimeOverSizeThresholds(true)
+            .build()
+
+        // Dopo ogni rebuffer Media3 aumenta il margine dal bordo live, così il
+        // player smette di inseguire segmenti pubblicati in ritardo dal server.
+        val liveSpeedControl = DefaultLivePlaybackSpeedControl.Builder()
+            .setFallbackMinPlaybackSpeed(0.97f)
+            .setFallbackMaxPlaybackSpeed(1.03f)
+            .setTargetLiveOffsetIncrementOnRebufferMs(10_000)
             .build()
 
         // Timeout espliciti e retry progressivi gestiti da Media3.
@@ -143,6 +152,7 @@ class MainActivity : FragmentActivity() {
 
         localPlayer = ExoPlayer.Builder(this)
             .setLoadControl(loadControl)
+            .setLivePlaybackSpeedControl(liveSpeedControl)
             .setMediaSourceFactory(hlsMediaSourceFactory)
             .build()
 
@@ -302,7 +312,20 @@ class MainActivity : FragmentActivity() {
             playbackRetryTask?.let { retryHandler.removeCallbacks(it) }
             playbackRetryTask = null
             playbackRetryCount = 0
-            val mediaItem = MediaItem.Builder().setUri(streamUrl).setMimeType(MimeTypes.APPLICATION_M3U8).setMediaMetadata(MediaMetadata.Builder().setTitle(channelName).build()).build()
+            val mediaItem = MediaItem.Builder()
+                .setUri(streamUrl)
+                .setMimeType(MimeTypes.APPLICATION_M3U8)
+                .setMediaMetadata(MediaMetadata.Builder().setTitle(channelName).build())
+                .setLiveConfiguration(
+                    MediaItem.LiveConfiguration.Builder()
+                        .setTargetOffsetMs(30_000)
+                        .setMinOffsetMs(20_000)
+                        .setMaxOffsetMs(90_000)
+                        .setMinPlaybackSpeed(0.97f)
+                        .setMaxPlaybackSpeed(1.03f)
+                        .build()
+                )
+                .build()
             player.setMediaItem(mediaItem)
             player.prepare()
             player.playWhenReady = true
@@ -663,7 +686,20 @@ class MainActivity : FragmentActivity() {
             playbackRetryTask = null
             playbackRetryCount = 0
             // Dichiarazione HLS esplicita anche per URL con token o senza estensione .m3u8.
-            val mediaItem = MediaItem.Builder().setUri(channel.url).setMimeType(MimeTypes.APPLICATION_M3U8).setMediaMetadata(MediaMetadata.Builder().setTitle(channel.name).build()).build()
+            val mediaItem = MediaItem.Builder()
+                .setUri(channel.url)
+                .setMimeType(MimeTypes.APPLICATION_M3U8)
+                .setMediaMetadata(MediaMetadata.Builder().setTitle(channel.name).build())
+                .setLiveConfiguration(
+                    MediaItem.LiveConfiguration.Builder()
+                        .setTargetOffsetMs(30_000)
+                        .setMinOffsetMs(20_000)
+                        .setMaxOffsetMs(90_000)
+                        .setMinPlaybackSpeed(0.97f)
+                        .setMaxPlaybackSpeed(1.03f)
+                        .build()
+                )
+                .build()
             player.setMediaItem(mediaItem)
             player.prepare()
             player.playWhenReady = true
