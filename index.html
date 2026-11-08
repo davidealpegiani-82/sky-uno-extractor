@@ -14,7 +14,7 @@ function clean(s){return String(s||'').replace(/&amp;/g,'&').replace(/&quot;/g,'
 function field(obj,keys){const pairs=[...obj.matchAll(/["']([^"']+)["']\s*:\s*["']([^"']+)["']/g)];for(const p of pairs)if(keys.includes(p[1]))return clean(p[2]);return ""}
 function extract(text){
  const found=[],seen=new Set();
- const add=(name,url,logo='')=>{name=clean(name);url=clean(url);if(!/sky\s*uno/i.test(name)||!/^https?:\/\//i.test(url))return;const key=name+'|'+url;if(!seen.has(key)){seen.add(key);found.push({name,url,logo})}};
+ const add=(name,url,logo='')=>{name=clean(name);url=clean(url);if(!/sky\s*uno/i.test(name)||/(?:\bplus\b|\+\s*1\b)/i.test(name)||!/^https?:\/\//i.test(url))return;const key=name+'|'+url;if(!seen.has(key)){seen.add(key);found.push({name,url,logo})}};
  const objects=text.match(/\{[^{}]{0,2500}\}/g)||[];
  for(const o of objects){const name=field(o,['name','title','channel_name','tvg-name']);const url=field(o,['url','stream','src','link']);const logo=field(o,['logo','tvg-logo','image','icon']);add(name,url,logo)}
  const lines=text.split(/\r?\n/);for(let i=0;i<lines.length;i++){if(lines[i].startsWith('#EXTINF')){const m=lines[i].match(/,(.*)$/);if(m&&/sky\s*uno/i.test(m[1])){let j=i+1;while(j<lines.length&&(!lines[j].trim()||lines[j].startsWith('#')))j++;if(j<lines.length)add(m[1],lines[j].trim())}}}
