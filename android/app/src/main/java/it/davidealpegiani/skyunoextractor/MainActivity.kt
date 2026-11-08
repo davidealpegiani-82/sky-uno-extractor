@@ -22,7 +22,7 @@ import androidx.media3.common.MimeTypes
 import androidx.media3.common.Player
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
-import androidx.media3.exoplayer.DefaultLoadErrorHandlingPolicy
+import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.hls.HlsMediaSource
 import androidx.media3.ui.PlayerView
@@ -497,7 +497,7 @@ video{width:100%;height:100%;object-fit:contain}
 .channel.active{border-color:#39d7ff;color:#39d7ff}
 .status{padding:8px 12px;color:#9eacc0;font-size:12px}
 </style>
-<script src="https://cdn.jsdelivr.net/npm/hls.js@1.7.4/dist/hls.min.js"><\\/script>
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1.7.4/dist/hls.min.js"></script>
 </head>
 <body>
 <div class="app">
