@@ -28,13 +28,14 @@ Package: `it.davidealpegiani.skyunoextractor`
 - Il flag `KEEP_SCREEN_ON` resta attivo durante la riproduzione locale; Cast continua a essere gestito da Media3.
 
 
-## Buffering HLS live — build 1.1.1
+## Buffering HLS live — build 1.1.2
 
-- Buffer locale portato a 45–120 secondi, con soglie di avvio/ripresa separate.
-- Offset live obiettivo 30 secondi (limiti 20–90 secondi): il player non insegue continuamente il segmento più recente.
+- Buffer locale configurato a 30–90 secondi, con avvio a 6 secondi e ripresa dopo rebuffer a 15 secondi. La finestra è stata allineata all'offset live per evitare di chiedere al player più precaricamento di quanto la distanza dal bordo live consenta.
+- Offset live obiettivo 45 secondi (limiti 30–90 secondi): privilegia una riserva di segmenti più ampia rispetto all'inseguimento del segmento più recente.
 - Regolazione adattiva della velocità limitata a 0,97–1,03x per recuperare gradualmente il ritardo senza salti.
 - Dopo ogni rebuffer Media3 incrementa automaticamente l'offset live di 10 secondi, adattandosi a sorgenti che pubblicano i segmenti con ritardo.
+- Timeout di lettura HTTP portato a 45 secondi per non interrompere una risposta lenta dopo soli 25 secondi di inattività.
 - Diagnostica in-app: stato HLS, secondi effettivamente precaricati, offset live e attività di download.
 - Log di manifest e segmenti con host, byte, durata e tipo di errore; gli URL completi e i token non vengono registrati.
 
-Queste impostazioni migliorano la tolleranza del client, ma non possono ricreare segmenti che il server non pubblica, correggere URL scaduti o superare limiti imposti dalla sorgente.
+Queste impostazioni riducono le cause di buffering introdotte dal client, ma non possono ricreare segmenti che il server non pubblica, correggere URL scaduti o superare limiti imposti dalla sorgente.
