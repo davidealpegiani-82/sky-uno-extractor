@@ -20,7 +20,11 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.Player
+import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.exoplayer.DefaultLoadControl
+import androidx.media3.exoplayer.DefaultLoadErrorHandlingPolicy
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.hls.HlsMediaSource
 import androidx.media3.ui.PlayerView
 import org.json.JSONArray
 import org.json.JSONObject
@@ -69,7 +73,32 @@ class MainActivity : Activity() {
         window.statusBarColor = BG
         window.navigationBarColor = BG
         window.decorView.systemUiVisibility = 0
-        player = ExoPlayer.Builder(this).build()
+        // Buffer live equilibrato: avvio ragionevolmente rapido, ma più margine
+        // per assorbire oscillazioni di rete senza accumulare minuti di ritardo.
+        val loadControl = DefaultLoadControl.Builder()
+            .setBufferDurationsMs(
+                20_000, // buffer minimo
+                60_000, // buffer massimo
+                3_000,  // avvio iniziale
+                6_000   // ripresa dopo un rebuffer
+            )
+            .setPrioritizeTimeOverSizeThresholds(true)
+            .build()
+
+        // Timeout espliciti e retry progressivi gestiti da Media3.
+        val httpDataSourceFactory = DefaultHttpDataSource.Factory()
+            .setConnectTimeoutMs(15_000)
+            .setReadTimeoutMs(25_000)
+            .setAllowCrossProtocolRedirects(true)
+
+        val hlsMediaSourceFactory = HlsMediaSource.Factory(httpDataSourceFactory)
+            .setLoadErrorHandlingPolicy(DefaultLoadErrorHandlingPolicy(5))
+
+        player = ExoPlayer.Builder(this)
+            .setLoadControl(loadControl)
+            .setMediaSourceFactory(hlsMediaSourceFactory)
+            .build()
+        player.playWhenReady = false
         buildInterface()
         player.addListener(object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
@@ -490,8 +519,15 @@ class MainActivity : Activity() {
     }
     private fun toast(message: String) = Toast.makeText(this, message, Toast.LENGTH_LONG).show()
 
+    override fun onStop() {
+        // Non lasciare il flusso attivo quando l'app passa davvero in background.
+        // Il cambio orientamento è gestito da configChanges nel manifest.
+        if (::player.isInitialized) player.pause()
+        super.onStop()
+    }
+
     override fun onDestroy() {
-        player.release()
+        if (::player.isInitialized) player.release()
         super.onDestroy()
     }
 }
