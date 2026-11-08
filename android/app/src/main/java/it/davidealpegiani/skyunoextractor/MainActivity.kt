@@ -58,7 +58,6 @@ class MainActivity : Activity() {
     companion object {
         private const val PICK_FILE = 4101
         private const val SAVE_HTML = 4102
-        private const val WORKER_URL = "https://skyuno-link.davide-alpegiani.workers.dev/api/create"
         private const val CYAN = 0xFF39D7FF.toInt()
         private const val BG = 0xFF080B12.toInt()
         private const val PANEL = 0xFF121A29.toInt()
@@ -211,7 +210,6 @@ class MainActivity : Activity() {
         otherList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(otherList)
         button("⬇  Esporta player HTML", true) { requestHtmlExport() }
-        button("🔗  Crea link HTTPS", false) { createHttpsLink() }
         label("Suggerimento: tocca il nome di un canale per riprodurlo; usa la casella per includerlo o escluderlo dall'esportazione.", MUTED, 12f)
     }
 
@@ -453,43 +451,7 @@ class MainActivity : Activity() {
         return """<!doctype html><html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sky Uno Player</title><style>body{margin:0;background:#080b12;color:white;font:15px system-ui}.top{padding:14px;background:#121a29;font-weight:bold}.video{height:48vh;background:#000}video{width:100%;height:100%;object-fit:contain}.list{padding:10px}.channel{display:block;width:100%;padding:14px;margin:5px 0;background:#172438;border:1px solid #30445e;border-radius:10px;color:white;text-align:left}</style><script src="https://cdn.jsdelivr.net/npm/hls.js@1.7.4/dist/hls.min.js"></script></head><body><div class="top">SKY UNO PLAYER</div><div class="video"><video id="v" controls playsinline></video></div><div class="list" id="list"></div><script>const C=$data;const v=document.getElementById('v');let h=null;const isAndroid=/Android/i.test(navigator.userAgent);function openNative(i){const c=C[i];const q=new URLSearchParams({url:c.url,name:c.name});location.href='intent://play?'+q.toString()+'#Intent;scheme=skyunoextractor;package=it.davidealpegiani.skyunoextractor;end'}function play(i){if(h){h.destroy();h=null}v.pause();v.removeAttribute('src');v.load();let u=C[i].url;if(v.canPlayType('application/vnd.apple.mpegurl')){v.src=u;v.play().catch(()=>{})}else if(window.Hls&&Hls.isSupported()){h=new Hls({enableWorker:true,lowLatencyMode:true,liveSyncDurationCount:10,liveMaxLatencyDurationCount:20,maxBufferLength:60,maxMaxBufferLength:120,backBufferLength:180,fragLoadingTimeOut:10000,manifestLoadingTimeOut:10000,debug:false});h.loadSource(u);h.attachMedia(v);h.on(Hls.Events.MANIFEST_PARSED,()=>v.play().catch(()=>{}))}}C.forEach((c,i)=>{let row=document.createElement('div');row.style.display='flex';row.style.gap='6px';let b=document.createElement('button');b.className='channel';b.style.flex='1';b.textContent=c.name;b.onclick=()=>play(i);row.append(b);if(isAndroid){let n=document.createElement('button');n.className='channel';n.textContent='Apri nell’app';n.onclick=()=>openNative(i);row.append(n)}document.getElementById('list').append(row)});if(C.length)play(0)</script></body></html>"""
     }
 
-    private fun createHttpsLink() {
-        val chosen = selectedChannels()
-        if (chosen.isEmpty()) { toast("Seleziona almeno un canale."); return }
-        status.text = "Creazione link HTTPS…"
-        Thread {
-            try {
-                val payload = JSONObject().put("channels", JSONArray().apply {
-                    chosen.forEach { put(JSONObject().put("name", it.name).put("url", it.url).put("logo", it.logo)) }
-                }).toString()
-                val connection = (URL(WORKER_URL).openConnection() as HttpURLConnection).apply {
-                    requestMethod = "POST"
-                    connectTimeout = 15000
-                    readTimeout = 20000
-                    doOutput = true
-                    setRequestProperty("Content-Type", "application/json; charset=utf-8")
-                }
-                connection.outputStream.use { it.write(payload.toByteArray(StandardCharsets.UTF_8)) }
-                val code = connection.responseCode
-                val stream = if (code in 200..299) connection.inputStream else connection.errorStream
-                val response = stream.bufferedReader().use { it.readText() }
-                connection.disconnect()
-                val json = JSONObject(response)
-                val link = json.optString("link")
-                if (code !in 200..299 || !json.optBoolean("success") || link.isBlank()) throw Exception(json.optString("error", "Servizio non disponibile"))
-                runOnUiThread {
-                    status.text = "Link creato."
-                    val share = Intent(Intent.ACTION_SEND).apply {
-                        type = "text/plain"
-                        putExtra(Intent.EXTRA_TEXT, link)
-                    }
-                    startActivity(Intent.createChooser(share, "Condividi link HTTPS"))
-                }
-            } catch (e: Exception) {
-                runOnUiThread { status.text = "Creazione link non riuscita: ${e.message}" }
-            }
-        }.start()
-    }
+
 
     private fun toggleFullscreen() {
         if (!fullscreen) {
