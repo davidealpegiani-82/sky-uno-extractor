@@ -189,7 +189,7 @@ async function makeHttpsLink(){
   }
   let binary='';
   for(let i=0;i<payloadBytes.length;i+=0x8000)binary+=String.fromCharCode(...payloadBytes.subarray(i,i+0x8000));
-  const encoded=btoa(binary).replace(/\\+/g,'-').replace(/\\//g,'_').replace(/=+$/,'');
+  const encoded=btoa(binary).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
   const link=new URL(location.href);link.search='';link.hash='skyplayer='+mode+encoded;
   if(link.href.length>30000)throw new Error('Il link è troppo lungo. Seleziona meno canali e riprova.');
   $('link').value=link.href;$('linkHint').textContent='Link HTTPS pronto. Contiene '+chosen.length+' canali. Gli indirizzi dei flussi sono incorporati nel link e non sono cifrati: condividilo solo con chi deve usarlo.';
@@ -211,7 +211,7 @@ async function openSharedPlayer(){
    raw=new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer());
   }else if(mode!=='r')throw new Error('Formato link non riconosciuto.');
   const parsed=JSON.parse(new TextDecoder().decode(raw));
-  if(!Array.isArray(parsed)||!parsed.length||parsed.some(c=>!c||typeof c.name!=='string'||typeof c.url!=='string'||!/^https?:\\/\\//i.test(c.url)))throw new Error('Il link non contiene canali validi.');
+  if(!Array.isArray(parsed)||!parsed.length||parsed.some(c=>!c||typeof c.name!=='string'||typeof c.url!=='string'||!/^https?:\/\//i.test(c.url)))throw new Error('Il link non contiene canali validi.');
   channels=parsed;selected=new Set(channels.map((_,i)=>i));
   document.open();document.write(playerHtml());document.close();
  }catch(e){$('status').textContent='Link HTTPS non valido: '+(e&&e.message?e.message:'impossibile aprire il player')}
