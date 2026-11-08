@@ -6,6 +6,8 @@ import android.content.pm.ActivityInfo
 import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -58,6 +60,9 @@ class MainActivity : Activity() {
     private lateinit var scroll: ScrollView
     private var pendingHtml = ""
     private var fullscreen = false
+    private val retryHandler = Handler(Looper.getMainLooper())
+    private var playbackRetryCount = 0
+    private var playbackRetryTask: Runnable? = null
 
     companion object {
         private const val PICK_FILE = 4101
@@ -106,11 +111,37 @@ class MainActivity : Activity() {
                     .take(4)
                     .mapNotNull { it.message?.takeIf { message -> message.isNotBlank() } }
                     .joinToString(" → ")
-                status.text = "Errore ${error.errorCodeName} (${error.errorCode}): " + detail.ifBlank { "flusso interrotto o non compatibile" }
+                val retryable = error.errorCodeName.contains("IO_") ||
+                    error.errorCodeName.contains("BEHIND_LIVE_WINDOW")
+                if (retryable && playbackRetryCount < 3) {
+                    val delays = longArrayOf(2_000L, 5_000L, 10_000L)
+                    val delay = delays[playbackRetryCount++]
+                    status.text = "Connessione instabile. Nuovo tentativo tra ${delay / 1000} s…"
+                    playbackRetryTask?.let { retryHandler.removeCallbacks(it) }
+                    val task = Runnable {
+                        if (!isFinishing && !isDestroyed && ::player.isInitialized) {
+                            if (error.errorCodeName.contains("BEHIND_LIVE_WINDOW")) {
+                                player.seekToDefaultPosition()
+                            }
+                            player.prepare()
+                            player.playWhenReady = true
+                        }
+                    }
+                    playbackRetryTask = task
+                    retryHandler.postDelayed(task, delay)
+                } else {
+                    status.text = "Errore ${error.errorCodeName} (${error.errorCode}): " +
+                        detail.ifBlank { "flusso interrotto o non compatibile" }
+                }
             }
             override fun onPlaybackStateChanged(playbackState: Int) {
                 if (playbackState == Player.STATE_BUFFERING) status.text = "Caricamento del flusso…"
-                if (playbackState == Player.STATE_READY) status.text = "Video pronto."
+                if (playbackState == Player.STATE_READY) {
+                    playbackRetryCount = 0
+                    playbackRetryTask?.let { retryHandler.removeCallbacks(it) }
+                    playbackRetryTask = null
+                    status.text = "Video pronto."
+                }
             }
         })
         handleIncomingIntent(intent)
@@ -134,6 +165,9 @@ class MainActivity : Activity() {
         val channelName = data.getQueryParameter("name")?.takeIf { it.isNotBlank() } ?: "Canale selezionato"
         status.text = "Apertura da player web: $channelName"
         try {
+            playbackRetryTask?.let { retryHandler.removeCallbacks(it) }
+            playbackRetryTask = null
+            playbackRetryCount = 0
             val mediaItem = MediaItem.Builder().setUri(streamUrl).setMimeType(MimeTypes.APPLICATION_M3U8).build()
             player.setMediaItem(mediaItem)
             player.prepare()
@@ -449,6 +483,9 @@ class MainActivity : Activity() {
         val channel = channels.getOrNull(index) ?: return
         status.text = "Avvio: ${channel.name}"
         try {
+            playbackRetryTask?.let { retryHandler.removeCallbacks(it) }
+            playbackRetryTask = null
+            playbackRetryCount = 0
             // Dichiarazione HLS esplicita anche per URL con token o senza estensione .m3u8.
             val mediaItem = MediaItem.Builder().setUri(channel.url).setMimeType(MimeTypes.APPLICATION_M3U8).build()
             player.setMediaItem(mediaItem)
@@ -641,11 +678,15 @@ if(C.length)startChannel(0,false);
     override fun onStop() {
         // Non lasciare il flusso attivo quando l'app passa davvero in background.
         // Il cambio orientamento è gestito da configChanges nel manifest.
+        playbackRetryTask?.let { retryHandler.removeCallbacks(it) }
+        playbackRetryTask = null
         if (::player.isInitialized) player.pause()
         super.onStop()
     }
 
     override fun onDestroy() {
+        playbackRetryTask?.let { retryHandler.removeCallbacks(it) }
+        retryHandler.removeCallbacksAndMessages(null)
         if (::player.isInitialized) player.release()
         super.onDestroy()
     }
