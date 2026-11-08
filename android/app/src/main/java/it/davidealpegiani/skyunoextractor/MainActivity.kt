@@ -157,7 +157,8 @@ class MainActivity : FragmentActivity() {
                     "SkyHLS",
                     "load error host=" + (loadEventInfo.dataSpec.uri.host ?: "?") +
                         " canceled=" + wasCanceled + " " +
-                        error.javaClass.simpleName + ": " + error.message
+                        error.javaClass.simpleName + ": " +
+                        (error.message ?: "").replace(Regex("https?://\\S+"), "[indirizzo omesso]")
                 )
             }
         })
@@ -180,14 +181,14 @@ class MainActivity : FragmentActivity() {
                 val detail = generateSequence(error as Throwable?) { it.cause }
                     .take(4)
                     .mapNotNull { it.message?.takeIf { message -> message.isNotBlank() } }
+                    .map { it.replace(Regex("https?://\\S+"), "[indirizzo omesso]") }
                     .joinToString(" → ")
                 Log.e(
                     "SkyHLS",
                     "player error code=" + error.errorCodeName +
                         " positionMs=" + player.currentPosition +
                         " bufferedMs=" + player.totalBufferedDuration +
-                        " liveOffsetMs=" + player.currentLiveOffset,
-                    error
+                        " liveOffsetMs=" + player.currentLiveOffset
                 )
                 val retryable = error.errorCodeName.contains("IO_") ||
                     error.errorCodeName.contains("BEHIND_LIVE_WINDOW")
