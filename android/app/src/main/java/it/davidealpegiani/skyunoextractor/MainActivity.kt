@@ -18,6 +18,11 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import androidx.fragment.app.FragmentActivity
+import androidx.mediarouter.app.MediaRouteButton
+import androidx.media3.cast.CastPlayer
+import androidx.media3.cast.MediaRouteButtonFactory
+import androidx.media3.common.DeviceInfo
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.MimeTypes
@@ -43,7 +48,7 @@ data class TvChannel(
     var selected: Boolean = true
 )
 
-class MainActivity : Activity() {
+class MainActivity : FragmentActivity() {
     private val channels = mutableListOf<TvChannel>()
     private lateinit var mainContainer: LinearLayout
     private lateinit var root: LinearLayout
@@ -56,7 +61,8 @@ class MainActivity : Activity() {
     private lateinit var status: TextView
     private lateinit var count: TextView
     private lateinit var playerView: PlayerView
-    private lateinit var player: ExoPlayer
+    private lateinit var localPlayer: ExoPlayer
+    private lateinit var player: CastPlayer
     private lateinit var scroll: ScrollView
     private var pendingHtml = ""
     private var fullscreen = false
@@ -100,10 +106,11 @@ class MainActivity : Activity() {
         val hlsMediaSourceFactory = HlsMediaSource.Factory(httpDataSourceFactory)
             .setLoadErrorHandlingPolicy(DefaultLoadErrorHandlingPolicy(5))
 
-        player = ExoPlayer.Builder(this)
+        localPlayer = ExoPlayer.Builder(this)
             .setLoadControl(loadControl)
             .setMediaSourceFactory(hlsMediaSourceFactory)
             .build()
+        player = CastPlayer.Builder(this).setLocalPlayer(localPlayer).build()
         player.playWhenReady = false
         buildInterface()
         player.addListener(object : Player.Listener {
@@ -221,6 +228,12 @@ class MainActivity : Activity() {
             setTypeface(null, android.graphics.Typeface.BOLD)
         }
         dockHeader.addView(dockTitle, LinearLayout.LayoutParams(0, dp(28), 1f))
+        val castButton = MediaRouteButton(this).apply {
+            contentDescription = "Trasmetti a Google Cast"
+            setBackgroundColor(Color.TRANSPARENT)
+        }
+        dockHeader.addView(castButton, LinearLayout.LayoutParams(dp(48), dp(42)))
+        MediaRouteButtonFactory.setUpMediaRouteButton(this, castButton)
         val fullButton = buttonView("⛶ Schermo intero") { toggleFullscreen() }
         dockHeader.addView(fullButton, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(38)))
         playerDock.addView(dockHeader)
@@ -691,7 +704,7 @@ if(C.length)startChannel(0,false);
         playbackRetryTask = null
         stablePlaybackTask?.let { retryHandler.removeCallbacks(it) }
         stablePlaybackTask = null
-        if (::player.isInitialized) player.pause()
+        if (::player.isInitialized && player.deviceInfo.playbackType == DeviceInfo.PLAYBACK_TYPE_LOCAL) player.pause()
         super.onStop()
     }
 
