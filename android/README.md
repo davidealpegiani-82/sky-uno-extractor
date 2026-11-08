@@ -26,3 +26,15 @@ Package: `it.davidealpegiani.skyunoextractor`
 - Tentativi di recupero progressivi per errori di rete, annullati quando si cambia canale.
 - Log diagnostici `SkyHLS` per caricamento manifest/segmenti ed errori, senza registrare gli URL completi o i token.
 - Il flag `KEEP_SCREEN_ON` resta attivo durante la riproduzione locale; Cast continua a essere gestito da Media3.
+
+
+## Buffering HLS live — build 1.1.1
+
+- Buffer locale portato a 45–120 secondi, con soglie di avvio/ripresa separate.
+- Offset live obiettivo 30 secondi (limiti 20–90 secondi): il player non insegue continuamente il segmento più recente.
+- Regolazione adattiva della velocità limitata a 0,97–1,03x per recuperare gradualmente il ritardo senza salti.
+- Dopo ogni rebuffer Media3 incrementa automaticamente l'offset live di 10 secondi, adattandosi a sorgenti che pubblicano i segmenti con ritardo.
+- Diagnostica in-app: stato HLS, secondi effettivamente precaricati, offset live e attività di download.
+- Log di manifest e segmenti con host, byte, durata e tipo di errore; gli URL completi e i token non vengono registrati.
+
+Queste impostazioni migliorano la tolleranza del client, ma non possono ricreare segmenti che il server non pubblica, correggere URL scaduti o superare limiti imposti dalla sorgente.
