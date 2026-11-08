@@ -46,6 +46,7 @@ class MainActivity : Activity() {
     private lateinit var status: TextView
     private lateinit var count: TextView
     private lateinit var playerView: PlayerView
+    private lateinit var playerDock: LinearLayout
     private lateinit var player: ExoPlayer
     private lateinit var scroll: ScrollView
     private var pendingHtml = ""
@@ -125,7 +126,7 @@ class MainActivity : Activity() {
         ))
 
         // Player dock: stays anchored to the bottom while the channel list scrolls.
-        val dock = LinearLayout(this).apply {
+        playerDock = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(10), dp(7), dp(10), dp(8))
             setBackgroundColor(PANEL)
@@ -144,7 +145,7 @@ class MainActivity : Activity() {
         dockHeader.addView(dockTitle, LinearLayout.LayoutParams(0, dp(28), 1f))
         val fullButton = buttonView("⛶ Schermo intero") { toggleFullscreen() }
         dockHeader.addView(fullButton, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(38)))
-        dock.addView(dockHeader)
+        playerDock.addView(dockHeader)
         playerView = PlayerView(this).apply {
             player = this@MainActivity.player
             useController = true
@@ -152,8 +153,8 @@ class MainActivity : Activity() {
             setBackgroundColor(Color.BLACK)
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(176))
         }
-        dock.addView(playerView)
-        mainContainer.addView(dock, LinearLayout.LayoutParams(
+        playerDock.addView(playerView)
+        mainContainer.addView(playerDock, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
         ))
         setContentView(mainContainer)
