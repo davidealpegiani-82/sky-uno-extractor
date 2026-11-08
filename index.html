@@ -11,7 +11,7 @@
 let channels=[];
 const $=id=>document.getElementById(id);
 function clean(s){return String(s||'').replace(/&amp;/g,'&').replace(/&quot;/g,'"').replace(/&#39;/g,"'").trim()}
-function field(obj,keys){for(const k of keys){const re=new RegExp(k+String.raw\`\s*:\s*["']([^"']+)["']\`,"i");const m=obj.match(re);if(m)return clean(m[1])}return ""}
+function field(obj,keys){const pairs=[...obj.matchAll(/["']([^"']+)["']\s*:\s*["']([^"']+)["']/g)];for(const p of pairs)if(keys.includes(p[1]))return clean(p[2]);return ""}
 function extract(text){
  const found=[],seen=new Set();
  const add=(name,url,logo='')=>{name=clean(name);url=clean(url);if(!/sky\s*uno/i.test(name)||!/^https?:\/\//i.test(url))return;const key=name+'|'+url;if(!seen.has(key)){seen.add(key);found.push({name,url,logo})}};
