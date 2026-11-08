@@ -242,12 +242,14 @@ class MainActivity : FragmentActivity() {
             setTypeface(null, android.graphics.Typeface.BOLD)
         }
         dockHeader.addView(dockTitle, LinearLayout.LayoutParams(0, dp(28), 1f))
-        val castButton = MediaRouteButton(this).apply {
-            contentDescription = "Trasmetti a Google Cast"
-            setBackgroundColor(Color.TRANSPARENT)
-        }
+        // Non creare la View Cast se il framework non è disponibile:
+        // alcuni dispositivi/temi possono fallire già nel costruttore MediaRouteButton.
         if (castPlayer != null) {
             try {
+                val castButton = MediaRouteButton(this).apply {
+                    contentDescription = "Trasmetti a Google Cast"
+                    setBackgroundColor(Color.TRANSPARENT)
+                }
                 dockHeader.addView(castButton, LinearLayout.LayoutParams(dp(48), dp(42)))
                 MediaRouteButtonFactory.setUpMediaRouteButton(this, castButton)
             } catch (e: Exception) {
