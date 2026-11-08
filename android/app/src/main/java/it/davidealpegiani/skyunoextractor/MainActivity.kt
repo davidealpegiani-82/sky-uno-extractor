@@ -477,7 +477,126 @@ class MainActivity : Activity() {
         val array = JSONArray()
         chosen.forEach { c -> array.put(JSONObject().put("name", c.name).put("url", c.url).put("logo", c.logo)) }
         val data = array.toString().replace("<", "\\u003c")
-        return """<!doctype html><html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sky Uno Player</title><style>body{margin:0;background:#080b12;color:white;font:15px system-ui}.top{padding:14px;background:#121a29;font-weight:bold}.video{height:48vh;background:#000}video{width:100%;height:100%;object-fit:contain}.list{padding:10px}.channel{display:block;width:100%;padding:14px;margin:5px 0;background:#172438;border:1px solid #30445e;border-radius:10px;color:white;text-align:left}</style><script src="https://cdn.jsdelivr.net/npm/hls.js@1.7.4/dist/hls.min.js"></script></head><body><div class="top">SKY UNO PLAYER</div><div class="video"><video id="v" controls playsinline></video></div><div class="list" id="list"></div><script>const C=$data;const v=document.getElementById('v');let h=null;const isAndroid=/Android/i.test(navigator.userAgent);function openNative(i){const c=C[i];const q=new URLSearchParams({url:c.url,name:c.name});location.href='intent://play?'+q.toString()+'#Intent;scheme=skyunoextractor;package=it.davidealpegiani.skyunoextractor;end'}function play(i){if(h){h.destroy();h=null}v.pause();v.removeAttribute('src');v.load();let u=C[i].url;if(v.canPlayType('application/vnd.apple.mpegurl')){v.src=u;v.play().catch(()=>{})}else if(window.Hls&&Hls.isSupported()){h=new Hls({enableWorker:true,lowLatencyMode:true,liveSyncDurationCount:10,liveMaxLatencyDurationCount:20,maxBufferLength:60,maxMaxBufferLength:120,backBufferLength:180,fragLoadingTimeOut:10000,manifestLoadingTimeOut:10000,debug:false});h.loadSource(u);h.attachMedia(v);h.on(Hls.Events.MANIFEST_PARSED,()=>v.play().catch(()=>{}))}}C.forEach((c,i)=>{let row=document.createElement('div');row.style.display='flex';row.style.gap='6px';let b=document.createElement('button');b.className='channel';b.style.flex='1';b.textContent=c.name;b.onclick=()=>play(i);row.append(b);if(isAndroid){let n=document.createElement('button');n.className='channel';n.textContent='Apri nell’app';n.onclick=()=>openNative(i);row.append(n)}document.getElementById('list').append(row)});if(C.length)play(0)</script></body></html>"""
+        return """
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#080b12">
+<title>Sky Player</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#080b12;color:#f4f7fb;font:15px system-ui}
+.app{height:100dvh;display:flex;flex-direction:column}
+.top{padding:14px;background:#111a29;font-weight:800}
+.video{height:46dvh;min-height:230px;background:#000}
+video{width:100%;height:100%;object-fit:contain}
+.list{overflow:auto;padding:8px;flex:1}
+.channel{display:flex;width:100%;padding:14px;margin:4px 0;background:#121d2d;border:1px solid #293b52;border-radius:12px;color:white;text-align:left;font-weight:700}
+.channel.active{border-color:#39d7ff;color:#39d7ff}
+.status{padding:8px 12px;color:#9eacc0;font-size:12px}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1.7.4/dist/hls.min.js"><\\/script>
+</head>
+<body>
+<div class="app">
+<div class="top">SKY PLAYER</div>
+<div class="video"><video id="v" controls playsinline webkit-playsinline preload="auto"></video></div>
+<div class="status" id="status">Scegli un canale</div>
+<div class="list" id="list"></div>
+</div>
+<script>
+const C=__CHANNELS__;
+const v=document.getElementById('v');
+const status=document.getElementById('status');
+const isAndroid=/Android/i.test(navigator.userAgent);
+let h=null,active=-1,retryTimer=null,watchdog=null,retries=0,lastTime=0,lastProgress=Date.now(),recovering=false;
+const retryDelays=[1000,2000,4000,8000,12000,15000];
+function openNative(i){
+ const c=C[i],q=new URLSearchParams({url:c.url,name:c.name});
+ location.href='intent://play?'+q.toString()+'#Intent;scheme=skyunoextractor;package=it.davidealpegiani.skyunoextractor;end';
+}
+function stopEngine(){
+ if(retryTimer){clearTimeout(retryTimer);retryTimer=null}
+ if(watchdog){clearInterval(watchdog);watchdog=null}
+ if(h){try{h.destroy()}catch(e){}h=null}
+ v.pause();v.removeAttribute('src');v.load();recovering=false;
+}
+function updateStatus(message){status.textContent=message}
+function scheduleRecovery(reason){
+ if(retryTimer||active<0)return;
+ if(retries>=retryDelays.length){updateStatus('Il flusso non risponde. Riprova selezionando nuovamente il canale.');return}
+ const delay=retryDelays[retries++];
+ recovering=true;
+ updateStatus(reason+' · tentativo automatico '+retries+'/'+retryDelays.length);
+ retryTimer=setTimeout(function(){
+  retryTimer=null;
+  if(active>=0)startChannel(active,true);
+ },delay);
+}
+function startWatchdog(){
+ if(watchdog)clearInterval(watchdog);
+ lastTime=v.currentTime||0;lastProgress=Date.now();
+ watchdog=setInterval(function(){
+  if(v.paused||v.ended||active<0)return;
+  const now=v.currentTime||0;
+  if(Math.abs(now-lastTime)>=0.20){
+   lastTime=now;lastProgress=Date.now();
+   if(!recovering){retries=0}
+  }else if(Date.now()-lastProgress>15000){
+   scheduleRecovery('Riproduzione bloccata');
+  }
+ },4000);
+}
+function startChannel(i,isRetry){
+ const c=C[i];if(!c)return;
+ active=i;
+ if(retryTimer){clearTimeout(retryTimer);retryTimer=null}
+ if(h){try{h.destroy()}catch(e){}h=null}
+ v.pause();v.removeAttribute('src');v.load();
+ document.querySelectorAll('.channel').forEach((b,n)=>b.classList.toggle('active',n===i));
+ updateStatus((isRetry?'Ripristino: ':'Caricamento: ')+c.name);
+ if(v.canPlayType('application/vnd.apple.mpegurl')){
+  v.src=c.url;
+  v.play().catch(()=>updateStatus('Premi Play per avviare '+c.name));
+ }else if(window.Hls&&Hls.isSupported()){
+  h=new Hls({
+   enableWorker:true,lowLatencyMode:false,
+   liveSyncDurationCount:3,liveMaxLatencyDurationCount:6,
+   maxBufferLength:30,maxMaxBufferLength:60,backBufferLength:30,
+   fragLoadingTimeOut:20000,manifestLoadingTimeOut:20000,
+   manifestLoadingMaxRetry:4,levelLoadingMaxRetry:4,fragLoadingMaxRetry:6,
+   debug:false
+  });
+  h.on(Hls.Events.MANIFEST_PARSED,function(){
+   v.play().catch(()=>updateStatus('Premi Play per avviare '+c.name));
+  });
+  h.on(Hls.Events.ERROR,function(_,e){
+   if(!e||!e.fatal)return;
+   scheduleRecovery(e.type===Hls.ErrorTypes.NETWORK_ERROR?'Errore di rete':'Errore del flusso');
+  });
+  h.loadSource(c.url);h.attachMedia(v);
+ }else{
+  updateStatus('Questo browser non supporta HLS. Su Android puoi provare Apri nell’app.');
+ }
+ startWatchdog();
+}
+v.addEventListener('playing',function(){lastProgress=Date.now();lastTime=v.currentTime||0;updateStatus('In riproduzione: '+(C[active]?.name||''));});
+v.addEventListener('timeupdate',function(){if(Math.abs((v.currentTime||0)-lastTime)>=0.2){lastTime=v.currentTime||0;lastProgress=Date.now();}});
+v.addEventListener('waiting',function(){if(!v.paused)updateStatus('Buffering…');});
+v.addEventListener('error',function(){if(active>=0)scheduleRecovery('Errore di riproduzione');});
+C.forEach(function(c,i){
+ const row=document.createElement('div');row.style.display='flex';row.style.gap='6px';
+ const b=document.createElement('button');b.className='channel';b.style.flex='1';b.textContent=c.name;b.onclick=function(){retries=0;startChannel(i,false)};row.appendChild(b);
+ if(isAndroid){const n=document.createElement('button');n.className='channel';n.textContent='Apri nell’app';n.onclick=function(){openNative(i)};row.appendChild(n)}
+ document.getElementById('list').appendChild(row);
+});
+if(C.length)startChannel(0,false);
+</script>
+</body>
+</html>
+""".replace("__CHANNELS__", data)
     }
 
 
