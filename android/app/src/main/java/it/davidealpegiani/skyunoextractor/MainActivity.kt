@@ -555,7 +555,7 @@ const C=__CHANNELS__;
 const v=document.getElementById('v');
 const status=document.getElementById('status');
 const isAndroid=/Android/i.test(navigator.userAgent);
-let h=null,active=-1,retryTimer=null,watchdog=null,retries=0,lastTime=0,lastProgress=Date.now(),recovering=false;
+let h=null,active=-1,retryTimer=null,watchdog=null,stableTimer=null,retries=0,lastTime=0,lastProgress=Date.now(),recovering=false;
 const retryDelays=[1000,2000,4000,8000,12000,15000];
 function openNative(i){
  const c=C[i],q=new URLSearchParams({url:c.url,name:c.name});
@@ -564,6 +564,7 @@ function openNative(i){
 function stopEngine(){
  if(retryTimer){clearTimeout(retryTimer);retryTimer=null}
  if(watchdog){clearInterval(watchdog);watchdog=null}
+ if(stableTimer){clearTimeout(stableTimer);stableTimer=null}
  if(h){try{h.destroy()}catch(e){}h=null}
  v.pause();v.removeAttribute('src');v.load();recovering=false;
 }
@@ -597,6 +598,7 @@ function startChannel(i,isRetry){
  const c=C[i];if(!c)return;
  active=i;
  if(retryTimer){clearTimeout(retryTimer);retryTimer=null}
+ if(stableTimer){clearTimeout(stableTimer);stableTimer=null}
  if(h){try{h.destroy()}catch(e){}h=null}
  v.pause();v.removeAttribute('src');v.load();
  document.querySelectorAll('.channel').forEach((b,n)=>b.classList.toggle('active',n===i));
@@ -626,7 +628,7 @@ function startChannel(i,isRetry){
  }
  startWatchdog();
 }
-v.addEventListener('playing',function(){lastProgress=Date.now();lastTime=v.currentTime||0;updateStatus('In riproduzione: '+(C[active]?.name||''));});
+v.addEventListener('playing',function(){lastProgress=Date.now();lastTime=v.currentTime||0;updateStatus('In riproduzione: '+(C[active]?.name||''));if(stableTimer)clearTimeout(stableTimer);stableTimer=setTimeout(function(){if(!v.paused&&Date.now()-lastProgress<5000)retries=0},30000);});
 v.addEventListener('timeupdate',function(){if(Math.abs((v.currentTime||0)-lastTime)>=0.2){lastTime=v.currentTime||0;lastProgress=Date.now();}});
 v.addEventListener('waiting',function(){if(!v.paused)updateStatus('Buffering…');});
 v.addEventListener('error',function(){if(active>=0)scheduleRecovery('Errore di riproduzione');});
