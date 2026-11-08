@@ -23,7 +23,6 @@ import androidx.media3.ui.PlayerView
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedReader
-import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URL
 import java.nio.charset.StandardCharsets
@@ -209,7 +208,7 @@ class MainActivity : Activity() {
         var invalid = 0
         uris.forEach { uri ->
             try {
-                val text = contentResolver.openInputStream(uri)?.bufferedReader(StandardCharsets.UTF_8)?.use(BufferedReader::readText) ?: ""
+                val text = contentResolver.openInputStream(uri)?.bufferedReader(StandardCharsets.UTF_8)?.use { it.readText() } ?: ""
                 val name = uri.lastPathSegment?.substringAfterLast('/') ?: "playlist"
                 val found = parseChannels(text)
                 if (found.isEmpty()) invalid++ else found.forEach { ch ->
@@ -395,15 +394,14 @@ class MainActivity : Activity() {
         if (fullscreen) {
             requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
             window.decorView.systemUiVisibility = (View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY)
-            root.visibility = View.GONE
+            (playerView.parent as? ViewGroup)?.removeView(playerView)
             setContentView(playerView)
             playerView.layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
         } else {
             requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
             window.decorView.systemUiVisibility = 0
-            playerView.layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(230))
             setContentView(scroll)
-            root.visibility = View.VISIBLE
+            root.addView(playerView, (root.childCount - 2).coerceAtLeast(0), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(230)))
         }
     }
 
