@@ -11,6 +11,7 @@ import android.os.Looper
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.widget.FrameLayout
 import android.widget.Button
 import android.widget.CheckBox
@@ -159,8 +160,13 @@ class MainActivity : FragmentActivity() {
             override fun onPlaybackStateChanged(playbackState: Int) {
                 if (playbackState == Player.STATE_BUFFERING) status.text = "Caricamento del flusso…"
                 if (playbackState == Player.STATE_READY) status.text = "Video pronto."
+                updateKeepScreenOn()
+            }
+            override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                updateKeepScreenOn()
             }
             override fun onIsPlayingChanged(isPlaying: Boolean) {
+                updateKeepScreenOn()
                 stablePlaybackTask?.let { retryHandler.removeCallbacks(it) }
                 stablePlaybackTask = null
                 if (isPlaying) {
@@ -202,6 +208,22 @@ class MainActivity : FragmentActivity() {
             player.playWhenReady = true
         } catch (e: Exception) {
             status.text = "Impossibile avviare il canale: ${e.message}"
+        }
+    }
+
+    // Mantiene acceso lo schermo durante la riproduzione locale, evitando
+    // che il timeout di standby mandi l'Activity in onStop() e metta in pausa il video.
+    // Durante Google Cast o quando la riproduzione è in pausa il comportamento resta normale.
+    private fun updateKeepScreenOn() {
+        val localPlayback = ::player.isInitialized &&
+            player.playWhenReady &&
+            player.playbackState != Player.STATE_IDLE &&
+            player.playbackState != Player.STATE_ENDED &&
+            (castPlayer == null || player.deviceInfo.playbackType == DeviceInfo.PLAYBACK_TYPE_LOCAL)
+        if (localPlayback) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        } else {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
     }
 
@@ -737,6 +759,7 @@ if(C.length)startChannel(0,false);
         playbackRetryTask = null
         stablePlaybackTask?.let { retryHandler.removeCallbacks(it) }
         stablePlaybackTask = null
+        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         if (::player.isInitialized && (castPlayer == null || player.deviceInfo.playbackType == DeviceInfo.PLAYBACK_TYPE_LOCAL)) player.pause()
         super.onStop()
     }
@@ -745,6 +768,7 @@ if(C.length)startChannel(0,false);
         playbackRetryTask?.let { retryHandler.removeCallbacks(it) }
         retryHandler.removeCallbacksAndMessages(null)
         stablePlaybackTask = null
+        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         if (::player.isInitialized) player.release()
         super.onDestroy()
     }
