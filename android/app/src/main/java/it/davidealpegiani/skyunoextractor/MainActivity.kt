@@ -69,6 +69,7 @@ class MainActivity : FragmentActivity() {
     private lateinit var playerDock: LinearLayout
     private lateinit var fullscreenContainer: FrameLayout
     private lateinit var status: TextView
+    private lateinit var playbackInfo: TextView
     private lateinit var count: TextView
     private lateinit var playerView: PlayerView
     private lateinit var localPlayer: ExoPlayer
@@ -84,6 +85,26 @@ class MainActivity : FragmentActivity() {
     private var stablePlaybackTask: Runnable? = null
     // Invalida i tentativi appartenenti al canale precedente.
     private var playbackGeneration = 0
+
+    // Diagnostica visibile: misura il buffer realmente disponibile durante i blocchi.
+    private val playbackInfoTask = object : Runnable {
+        override fun run() {
+            if (!::player.isInitialized || !::playbackInfo.isInitialized || isFinishing || isDestroyed) return
+            val state = when (player.playbackState) {
+                Player.STATE_IDLE -> "IDLE"
+                Player.STATE_BUFFERING -> "BUFFERING"
+                Player.STATE_READY -> "READY"
+                Player.STATE_ENDED -> "ENDED"
+                else -> "?"
+            }
+            val aheadMs = (player.bufferedPosition - player.currentPosition).coerceAtLeast(0L)
+            val liveOffsetMs = player.currentLiveOffset
+            val liveText = if (liveOffsetMs == C.TIME_UNSET) "n/d" else "${liveOffsetMs / 1000}s"
+            playbackInfo.text = "HLS: $state · buffer ${aheadMs / 1000}s · live $liveText · " +
+                if (player.isLoading) "download attivo" else "download fermo"
+            retryHandler.postDelayed(this, 1000L)
+        }
+    }
 
     companion object {
         private const val PICK_FILE = 4101
@@ -128,6 +149,22 @@ class MainActivity : FragmentActivity() {
         // Diagnostica HLS: registra manifest/segmenti e problemi HTTP senza
         // esporre URL completi o token di accesso nei log.
         localPlayer.addAnalyticsListener(object : AnalyticsListener {
+            override fun onLoadStarted(
+                eventTime: AnalyticsListener.EventTime,
+                loadEventInfo: LoadEventInfo,
+                mediaLoadData: MediaLoadData
+            ) {
+                val kind = when (mediaLoadData.dataType) {
+                    C.DATA_TYPE_MANIFEST -> "manifest"
+                    C.DATA_TYPE_MEDIA -> "segment"
+                    else -> "type-" + mediaLoadData.dataType
+                }
+                Log.d(
+                    "SkyHLS",
+                    "load start=" + kind + " host=" + (loadEventInfo.dataSpec.uri.host ?: "?")
+                )
+            }
+
             override fun onLoadCompleted(
                 eventTime: AnalyticsListener.EventTime,
                 loadEventInfo: LoadEventInfo,
@@ -356,6 +393,13 @@ class MainActivity : FragmentActivity() {
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(176))
         }
         playerDock.addView(playerView)
+        playbackInfo = TextView(this).apply {
+            text = "HLS: in attesa del flusso"
+            textSize = 10f
+            setTextColor(MUTED)
+            setPadding(dp(3), dp(3), dp(3), dp(2))
+        }
+        playerDock.addView(playbackInfo)
         mainContainer.addView(playerDock, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
         ))
@@ -816,7 +860,14 @@ if(C.length)startChannel(0,false);
     }
     private fun toast(message: String) = Toast.makeText(this, message, Toast.LENGTH_LONG).show()
 
+    override fun onStart() {
+        super.onStart()
+        retryHandler.removeCallbacks(playbackInfoTask)
+        retryHandler.post(playbackInfoTask)
+    }
+
     override fun onStop() {
+        retryHandler.removeCallbacks(playbackInfoTask)
         // Non lasciare il flusso attivo quando l'app passa davvero in background.
         // Il cambio orientamento è gestito da configChanges nel manifest.
         playbackRetryTask?.let { retryHandler.removeCallbacks(it) }
