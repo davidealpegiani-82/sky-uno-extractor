@@ -183,7 +183,7 @@ async function makeHttpsLink(){
  try{
   const bytes=new TextEncoder().encode(JSON.stringify(chosen.map(c=>({name:c.name,url:c.url,logo:c.logo||''}))));
   let mode='r',payloadBytes=bytes;
-  if('CompressionStream'in window){
+  if('CompressionStream'in window&&'DecompressionStream'in window){
    const stream=new Blob([bytes]).stream().pipeThrough(new CompressionStream('gzip'));
    payloadBytes=new Uint8Array(await new Response(stream).arrayBuffer());mode='g';
   }
@@ -214,7 +214,7 @@ async function openSharedPlayer(){
   if(!Array.isArray(parsed)||!parsed.length||parsed.some(c=>!c||typeof c.name!=='string'||typeof c.url!=='string'||!/^https?:\/\//i.test(c.url)))throw new Error('Il link non contiene canali validi.');
   channels=parsed;selected=new Set(channels.map((_,i)=>i));
   document.open();document.write(playerHtml());document.close();
- }catch(e){$('status').textContent='Link HTTPS non valido: '+(e&&e.message?e.message:'impossibile aprire il player')}
+ }catch(e){const message='Link HTTPS non valido: '+(e&&e.message?e.message:'impossibile aprire il player');const target=$('playing')||$('status');if(target)target.textContent=message;else alert(message)}
 }
 openSharedPlayer();
 if('serviceWorker'in navigator)addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(console.warn));
