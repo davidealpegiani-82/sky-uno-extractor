@@ -1,4 +1,4 @@
-name: Build Sky Extractor APK
+name: Build Sky Extractor and Player Lite APKs
 
 on:
   workflow_dispatch:
@@ -7,12 +7,13 @@ on:
       - "android/**"
       - ".github/workflows/android-apk.yml"
   push:
+    branches: [main]
     paths:
       - "android/**"
       - ".github/workflows/android-apk.yml"
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -29,15 +30,33 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.13"
-      - name: Build debug APK
+      - name: Build both APKs
         working-directory: android
-        run: gradle --no-daemon assembleDebug
-      - name: Rename APK
-        run: cp "android/app/build/outputs/apk/debug/app-debug.apk" "android/app/build/outputs/apk/debug/Sky Extractor.apk"
-      - name: Upload APK
+        run: gradle --no-daemon :app:assembleDebug :playerlite:assembleDebug
+      - name: Rename APKs
+        run: |
+          cp "android/app/build/outputs/apk/debug/app-debug.apk" "android/app/build/outputs/apk/debug/Sky-Extractor.apk"
+          cp "android/playerlite/build/outputs/apk/debug/playerlite-debug.apk" "android/playerlite/build/outputs/apk/debug/Sky-Player-Lite.apk"
+      - name: Upload Sky Extractor APK
         uses: actions/upload-artifact@v4
         with:
           name: Sky-Extractor
-          path: "android/app/build/outputs/apk/debug/Sky Extractor.apk"
+          path: "android/app/build/outputs/apk/debug/Sky-Extractor.apk"
           if-no-files-found: error
           retention-days: 30
+      - name: Upload Player Lite APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Sky-Player-Lite
+          path: "android/playerlite/build/outputs/apk/debug/Sky-Player-Lite.apk"
+          if-no-files-found: error
+          retention-days: 30
+      - name: Publish stable Player Lite APK
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: player-lite-latest
+          name: Sky Player Lite - ultima build
+          prerelease: true
+          make_latest: false
+          files: android/playerlite/build/outputs/apk/debug/Sky-Player-Lite.apk
