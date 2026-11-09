@@ -12,6 +12,7 @@ import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
@@ -31,7 +32,25 @@ class MainActivity : Activity() {
     private lateinit var playerView: PlayerView
     private lateinit var titleView: TextView
     private lateinit var statusView: TextView
+    private lateinit var diagnosticsView: TextView
     private val retryHandler = Handler(Looper.getMainLooper())
+    private val diagnosticsTask = object : Runnable {
+        override fun run() {
+            val current = player
+            if (current == null || !::diagnosticsView.isInitialized || isFinishing || isDestroyed) return
+            val aheadMs = (current.bufferedPosition - current.currentPosition).coerceAtLeast(0L)
+            val state = when (current.playbackState) {
+                Player.STATE_BUFFERING -> "BUFFERING"
+                Player.STATE_READY -> "READY"
+                Player.STATE_IDLE -> "IDLE"
+                Player.STATE_ENDED -> "ENDED"
+                else -> "?"
+            }
+            diagnosticsView.text = "HLS: $state · buffer ${aheadMs / 1000}s · " +
+                if (current.isLoading) "download attivo" else "download in attesa"
+            retryHandler.postDelayed(this, 1000L)
+        }
+    }
     private var retryCount = 0
     private var retryTask: Runnable? = null
 
@@ -77,6 +96,13 @@ class MainActivity : Activity() {
         }
         root.addView(titleView)
         root.addView(statusView)
+        diagnosticsView = TextView(this).apply {
+            text = "HLS: in attesa · buffer 0s"
+            setTextColor(Color.rgb(112, 196, 220))
+            textSize = 11f
+            setPadding(20, 0, 20, 8)
+        }
+        root.addView(diagnosticsView)
         root.addView(playerView)
         setContentView(root)
     }
@@ -158,6 +184,12 @@ class MainActivity : Activity() {
             }
     }
 
+    override fun onStart() {
+        super.onStart()
+        retryHandler.removeCallbacks(diagnosticsTask)
+        retryHandler.post(diagnosticsTask)
+    }
+
     override fun onNewIntent(intent: android.content.Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
@@ -217,6 +249,7 @@ class MainActivity : Activity() {
     }
 
     override fun onStop() {
+        retryHandler.removeCallbacks(diagnosticsTask)
         resumeAfterBackground = player?.playWhenReady == true && (player?.mediaItemCount ?: 0) > 0
         player?.pause()
         super.onStop()
@@ -231,6 +264,7 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+        retryHandler.removeCallbacks(diagnosticsTask)
         retryTask?.let { retryHandler.removeCallbacks(it) }
         retryHandler.removeCallbacksAndMessages(null)
         playerView.player = null
