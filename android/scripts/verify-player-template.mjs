@@ -23,6 +23,10 @@ assert.match(template, /now-lastLoadKick<2000/, 'buffer recovery checks must use
 assert.match(template, /now-lastHlsActivity<2000/, 'do not restart HLS immediately after recent activity');
 assert.match(template, /\|\|fragmentLoading\)return/, 'do not kick HLS while a fragment request is active');
 assert.match(template, /setInterval\(checkBufferPolicy,2000\)/, 'buffer policy must be checked every 2 seconds');
+assert.match(template, /function recoverNetwork\(reason\)/, 'fatal HLS network errors must have a dedicated recovery path');
+assert.match(template, /hls\.startLoad\(-1\)/, 'network recovery must restart HLS loading without recreating the player');
+assert.match(template, /networkRetryCount=0;recovering=false;checkBufferPolicy\(\)/, 'successful buffered fragments must clear the network recovery state');
+assert.match(template, /e\.type===Hls\.ErrorTypes\.MEDIA_ERROR[\s\S]*?hls\.recoverMediaError\(\)/, 'fatal media errors must use HLS media recovery');
 assert.match(template, /maxBufferLength:90/);
 assert.match(template, /maxMaxBufferLength:90/);
 assert.match(template, /fullscreenBtn/);
