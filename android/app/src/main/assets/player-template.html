@@ -34,7 +34,7 @@ const video=document.getElementById('video'),statusEl=document.getElementById('s
 const android=/Android/i.test(navigator.userAgent);
 let hls=null,active=-1,retryTimer=null,watchdog=null,retryCount=0,lastTime=0,lastProgress=Date.now(),recovering=false;
 let startupPending=false,startupSince=0,bufferGuard=false,guardPoll=null;
-const START_BUFFER_SECONDS=5,RESUME_BUFFER_SECONDS=8,PAUSE_BUFFER_SECONDS=2.5,TARGET_BUFFER_SECONDS=60;
+const START_BUFFER_SECONDS=6,RESUME_BUFFER_SECONDS=15,PAUSE_BUFFER_SECONDS=6,TARGET_BUFFER_SECONDS=90;
 const retryDelays=[1000,2000,4000,8000,12000,15000];
 function setStatus(s){statusEl.textContent=s}
 function stopPlayer(){if(retryTimer){clearTimeout(retryTimer);retryTimer=null}if(watchdog){clearInterval(watchdog);watchdog=null}if(guardPoll){clearInterval(guardPoll);guardPoll=null}if(hls){try{hls.destroy()}catch(e){}hls=null}video.pause();video.removeAttribute('src');video.load();recovering=false;startupPending=false;bufferGuard=false}
@@ -45,7 +45,7 @@ function checkBufferPolicy(){
  const ahead=updateBuffer();
  if(startupPending){
   const waited=(Date.now()-startupSince)/1000;
-  if(ahead>=START_BUFFER_SECONDS||(waited>=30&&ahead>=3)||(waited>=60&&ahead>=1.5)){requestPlay();return}
+  if(ahead>=START_BUFFER_SECONDS||(waited>=60&&ahead>=3)){requestPlay();return}
   setStatus('Precaricamento buffer: '+ahead.toFixed(1)+' / '+START_BUFFER_SECONDS+' s');return;
  }
  if(bufferGuard){
@@ -63,7 +63,7 @@ function recover(reason){if(retryTimer||active<0)return;if(retryCount>=retryDela
 function startWatchdog(){if(watchdog)clearInterval(watchdog);lastTime=video.currentTime||0;lastProgress=Date.now();watchdog=setInterval(()=>{if(video.paused||video.ended||active<0)return;const t=video.currentTime||0;if(Math.abs(t-lastTime)>=.2){lastTime=t;lastProgress=Date.now();if(!recovering)retryCount=0}else if(Date.now()-lastProgress>15000)recover('Riproduzione bloccata')},4000)}
 function startChannel(i,retry=false){const c=CHANNELS[i];if(!c)return;active=i;if(retryTimer){clearTimeout(retryTimer);retryTimer=null}if(guardPoll){clearInterval(guardPoll);guardPoll=null}if(hls){try{hls.destroy()}catch(e){}hls=null}video.pause();video.removeAttribute('src');video.load();startupPending=false;bufferGuard=false;document.querySelectorAll('.channel').forEach((b,n)=>b.classList.toggle('active',n===i));setStatus((retry?'Ripristino: ':'Caricamento: ')+c.name);
  if(video.canPlayType('application/vnd.apple.mpegurl')){video.src=c.url;video.load();beginPrebuffer()}
- else if(window.Hls&&Hls.isSupported()){hls=new Hls({enableWorker:true,lowLatencyMode:false,liveSyncDurationCount:8,liveMaxLatencyDurationCount:24,maxBufferLength:60,maxMaxBufferLength:90,maxBufferSize:60*1000*1000,backBufferLength:30,maxBufferHole:.1,highBufferWatchdogPeriod:2,startFragPrefetch:true,testBandwidth:true,abrEwmaDefaultEstimate:2000000,abrBandWidthFactor:.8,abrBandWidthUpFactor:.7,fragLoadingTimeOut:30000,manifestLoadingTimeOut:30000,manifestLoadingMaxRetry:6,levelLoadingMaxRetry:6,fragLoadingMaxRetry:8,fragLoadingRetryDelay:1000,fragLoadingMaxRetryTimeout:30000,debug:false});hls.on(Hls.Events.MANIFEST_PARSED,()=>beginPrebuffer());hls.on(Hls.Events.FRAG_BUFFERED,()=>{if(startupPending||bufferGuard)checkBufferPolicy()});hls.on(Hls.Events.ERROR,(_,e)=>{if(e&&e.fatal)recover(e.type===Hls.ErrorTypes.NETWORK_ERROR?'Errore di rete':'Errore del flusso')});hls.loadSource(c.url);hls.attachMedia(video)}
+ else if(window.Hls&&Hls.isSupported()){hls=new Hls({enableWorker:true,lowLatencyMode:false,liveSyncDurationCount:8,liveMaxLatencyDurationCount:24,maxBufferLength:90,maxMaxBufferLength:90,maxBufferSize:90*1000*1000,backBufferLength:30,maxBufferHole:.1,highBufferWatchdogPeriod:2,startFragPrefetch:true,testBandwidth:true,abrEwmaDefaultEstimate:2000000,abrBandWidthFactor:.8,abrBandWidthUpFactor:.7,fragLoadingTimeOut:45000,manifestLoadingTimeOut:30000,manifestLoadingMaxRetry:6,levelLoadingMaxRetry:6,fragLoadingMaxRetry:8,fragLoadingRetryDelay:1000,fragLoadingMaxRetryTimeout:45000,debug:false});hls.on(Hls.Events.MANIFEST_PARSED,()=>beginPrebuffer());hls.on(Hls.Events.FRAG_BUFFERED,()=>{if(startupPending||bufferGuard)checkBufferPolicy()});hls.on(Hls.Events.ERROR,(_,e)=>{if(e&&e.fatal)recover(e.type===Hls.ErrorTypes.NETWORK_ERROR?'Errore di rete':'Errore del flusso')});hls.loadSource(c.url);hls.attachMedia(video)}
  else setStatus('HLS non supportato da questo browser. Usa Apri con Player Lite su Android.');
  startWatchdog();updateBuffer()}
 function openLite(){if(active<0||!CHANNELS[active]){setStatus('Seleziona prima un canale.');return}const c=CHANNELS[active],q=new URLSearchParams({url:c.url,name:c.name});location.href='intent://play?'+q.toString()+'#Intent;scheme=skylite;package=it.davidealpegiani.skylite;S.browser_fallback_url='+encodeURIComponent(APK_URL)+';end'}
