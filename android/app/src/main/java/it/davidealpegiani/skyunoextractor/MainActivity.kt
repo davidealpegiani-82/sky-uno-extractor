@@ -121,8 +121,11 @@ class MainActivity : FragmentActivity() {
         window.statusBarColor = BG
         window.navigationBarColor = BG
         window.decorView.systemUiVisibility = 0
-        // Buffer conservativo per HLS live: mantiene più segmenti in anticipo,
-        // senza richiedere attese eccessive all'avvio.
+        // Profilo scelto dopo il confronto delle revisioni:
+        // 30-90 s di buffer, avvio a 6 s e ripresa a 15 s.
+        // Non si forza un target 120 s: per un live la finestra reale della
+        // playlist e l'offset dal live edge limitano i segmenti effettivamente scaricabili.
+        // Il target live di 45 s (30-90 s) lascia margine senza inseguire il bordo.
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
                 30_000, // margine di precaricamento coerente con il ritardo live target
