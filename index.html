@@ -143,33 +143,28 @@ $('file').addEventListener('change',async e=>{
  render();$('playing').textContent=channels.length?'Scegli un canale e premi ▶ per provarlo nel player.':'Carica una playlist valida.';
  e.target.value='';
 });
-function playerHtml(){
+async function playerHtml(){
+ const templateUrl=new URL('./android/app/src/main/assets/player-template.html',document.baseURI);
+ const response=await fetch(templateUrl,{cache:'no-store'});
+ if(!response.ok)throw new Error('Modello player non disponibile ('+response.status+').');
+ const template=await response.text();
+ if(!template.includes('__CHANNELS__'))throw new Error('Modello player non valido: segnaposto canali mancante.');
  const data=JSON.stringify(getSelectedChannels()).replace(/</g,'\\u003c');
- return `<!doctype html><html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#080b12"><title>Sky Player</title><style>*{box-sizing:border-box}body{margin:0;background:#080b12;color:#f4f7fb;font:15px system-ui}.app{min-height:100dvh;display:flex;flex-direction:column;max-width:1000px;margin:auto}.top{padding:12px 16px;background:#111a29;font-weight:800}.video{height:min(55dvh,560px);min-height:220px;background:#000}video{width:100%;height:100%;object-fit:contain}.status{padding:9px 14px 4px;color:#c6d2e2;font-size:13px}.buffer{padding:4px 14px 12px}.buffer-head{display:flex;justify-content:space-between;font-size:12px;color:#b6c5d8;margin-bottom:6px}.buffer-track{height:7px;border-radius:99px;background:#263449;overflow:hidden}.buffer-fill{height:100%;width:0;background:linear-gradient(90deg,#19b8df,#39dc9a);border-radius:99px;transition:width .25s}.controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 12px 14px}.lite-open{border:0;border-radius:10px;padding:11px 12px;background:#116b50;color:#fff;font:700 13px system-ui}.lite-install{color:#39d7ff;font-size:12px;font-weight:700;text-decoration:none}.channel-select{min-width:0;flex:1;padding:11px 12px;border:1px solid #34465f;border-radius:10px;background:#121d2d;color:#fff;font:600 14px system-ui}.footnote{padding:0 14px 12px;color:#8394aa;font-size:11px}</style><script src="https://cdn.jsdelivr.net/npm/hls.js@1.7.4/dist/hls.min.js"><\/script></head><body><div class="app"><div class="top">SKY PLAYER</div><div class="video"><video id="v" controls playsinline webkit-playsinline preload="auto"></video></div><div class="status" id="status">Scegli un canale</div><div class="buffer"><div class="buffer-head"><span>Buffer disponibile · obiettivo 30 s</span><strong id="bufferValue">0 secondi</strong></div><div class="buffer-track"><div class="buffer-fill" id="bufferFill"></div></div></div><div class="controls"><select id="channelSelect" class="channel-select" aria-label="Seleziona canale"></select><button id="openLite" class="lite-open" type="button">▶ Player Lite</button><a class="lite-install" href="https://github.com/davidealpegiani-82/sky-uno-extractor/releases/download/player-lite-latest/Sky-Player-Lite.apk">Installa APK</a></div></div><script>
- const C=${data},v=document.getElementById('v'),status=document.getElementById('status'),bufferValue=document.getElementById('bufferValue'),bufferFill=document.getElementById('bufferFill');
- const PLAYER_LITE_APK='https://github.com/davidealpegiani-82/sky-uno-extractor/releases/download/player-lite-latest/Sky-Player-Lite.apk';
- function openLite(){if(active<0||!C[active]){status.textContent='Seleziona prima un canale.';return}const q=new URLSearchParams({url:C[active].url,name:C[active].name});location.href='intent://play?'+q.toString()+'#Intent;scheme=skylite;package=it.davidealpegiani.skylite;S.browser_fallback_url='+encodeURIComponent(PLAYER_LITE_APK)+';end'}
- document.getElementById('openLite').addEventListener('click',openLite);
- let h=null,active=-1,retryTimer=null,watchdog=null,retries=0,lastTime=0,lastProgress=Date.now(),bufferTimer=null;
- function updateBuffer(){let seconds=0;const t=v.currentTime||0;try{for(let i=0;i<v.buffered.length;i++){const a=v.buffered.start(i),b=v.buffered.end(i);if(b>=t-0.5&&a<=t+1){seconds=Math.max(0,b-Math.max(t,a));break}}}catch(e){}bufferValue.textContent=Math.floor(seconds)+' secondi';bufferFill.style.width=Math.min(100,seconds/60*100)+'%';bufferFill.style.background=seconds<8?'#f0a34a':seconds<20?'#e6cf58':'linear-gradient(90deg,#19b8df,#39dc9a)'}
- const delays=[1000,2000,4000,8000,12000,15000];
- function recover(reason){if(retryTimer||active<0)return;if(retries>=delays.length){status.textContent='Flusso non disponibile dopo diversi tentativi. Seleziona nuovamente il canale per riprovare.';return}const d=delays[retries++];status.textContent=reason+' · ripristino '+retries+'/'+delays.length;retryTimer=setTimeout(()=>{retryTimer=null;start(active,true)},d)}
- function start(i,retry){active=i;document.getElementById('channelSelect').value=String(i);const c=C[i];if(retryTimer){clearTimeout(retryTimer);retryTimer=null}if(h){try{h.destroy()}catch(e){}h=null}v.pause();v.removeAttribute('src');v.load();status.textContent=(retry?'Ripristino: ':'Caricamento: ')+c.name;
-  if(v.canPlayType('application/vnd.apple.mpegurl')){v.src=c.url;v.play().catch(()=>status.textContent='Premi Play per avviare '+c.name)}
-  else if(window.Hls&&Hls.isSupported()){h=new Hls({enableWorker:true,lowLatencyMode:false,liveSyncDurationCount:3,liveMaxLatencyDurationCount:6,maxBufferLength:60,maxMaxBufferLength:120,maxBufferSize:120*1000*1000,maxBufferHole:0.5,highBufferWatchdogPeriod:2,startFragPrefetch:true,backBufferLength:30,fragLoadingTimeOut:20000,manifestLoadingTimeOut:20000,manifestLoadingMaxRetry:4,levelLoadingMaxRetry:4,fragLoadingMaxRetry:6,debug:false});h.on(Hls.Events.MANIFEST_PARSED,()=>v.play().catch(()=>status.textContent='Premi Play per avviare '+c.name));h.on(Hls.Events.ERROR,(_,e)=>{if(e&&e.fatal)recover(e.type===Hls.ErrorTypes.NETWORK_ERROR?'Errore di rete':'Errore del flusso')});h.loadSource(c.url);h.attachMedia(v)}
-  else{status.textContent='Browser non compatibile con HLS.'}
-  lastTime=v.currentTime||0;lastProgress=Date.now();if(watchdog)clearInterval(watchdog);watchdog=setInterval(()=>{if(v.paused||v.ended||active<0)return;const t=v.currentTime||0;if(Math.abs(t-lastTime)>=0.2){lastTime=t;lastProgress=Date.now()}else if(Date.now()-lastProgress>15000)recover('Riproduzione bloccata')},4000);
- }
- v.addEventListener('playing',()=>{lastTime=v.currentTime||0;lastProgress=Date.now();status.textContent='In riproduzione: '+(C[active]?.name||'');updateBuffer()});
- v.addEventListener('progress',updateBuffer);v.addEventListener('timeupdate',updateBuffer);v.addEventListener('waiting',updateBuffer);if(bufferTimer)clearInterval(bufferTimer);bufferTimer=setInterval(updateBuffer,1000);
- v.addEventListener('timeupdate',()=>{const t=v.currentTime||0;if(Math.abs(t-lastTime)>=0.2){lastTime=t;lastProgress=Date.now()}});
- v.addEventListener('waiting',()=>{if(!v.paused)status.textContent='Buffering…'});
- v.addEventListener('error',()=>{if(active>=0)recover('Errore di riproduzione')});
- const channelSelect=document.getElementById('channelSelect');C.forEach((c,i)=>{const option=document.createElement('option');option.value=String(i);option.textContent=c.name;channelSelect.appendChild(option)});channelSelect.addEventListener('change',()=>{const i=Number(channelSelect.value);retries=0;start(i,false)});if(!C.length){channelSelect.disabled=true;status.textContent='Nessun canale presente nel player.'}if(C.length)start(0,false);
- <\/script></body></html>`;
+ return template.replace('__CHANNELS__',data);
 }
-function savePlayer(){const blob=new Blob([playerHtml()],{type:'text/html'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='Sky Player.html';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),3000)}
+async function savePlayer(){
+ const btn=$('download');btn.disabled=true;btn.textContent='Preparazione player…';
+ try{
+  const html=await playerHtml();
+  const blob=new Blob([html],{type:'text/html;charset=utf-8'});
+  const url=URL.createObjectURL(blob),a=document.createElement('a');
+  a.href=url;a.download='Sky Player.html';a.click();
+  setTimeout(()=>URL.revokeObjectURL(url),5000);
+ }catch(error){$('status').textContent='Esportazione non riuscita: '+(error&&error.message?error.message:'errore');}
+ finally{btn.disabled=!getSelectedChannels().length;btn.textContent='⬇ Esporta player selezionati';}
+}
 $('download').onclick=savePlayer;
+
 
 $('copy').onclick=async()=>{try{await navigator.clipboard.writeText($('link').value);$('copy').textContent='Copiato!'}catch(e){$('link').focus();$('link').select();try{document.execCommand('copy');$('copy').textContent='Copiato!'}catch(_){$('linkHint').textContent='Seleziona e copia manualmente il link.'}}};
 $('close').onclick=()=>{$('modal').hidden=true;$('copy').textContent='Copia link'};

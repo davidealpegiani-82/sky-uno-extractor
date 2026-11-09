@@ -1,0 +1,18 @@
+import { readFileSync } from 'node:fs';
+import assert from 'node:assert/strict';
+const template = readFileSync('android/app/src/main/assets/player-template.html', 'utf8');
+const kotlin = readFileSync('android/app/src/main/java/it/davidealpegiani/skyunoextractor/MainActivity.kt', 'utf8');
+const web = readFileSync('index.html', 'utf8');
+assert.equal((template.match(/__CHANNELS__/g) || []).length, 1, 'template must contain exactly one channel placeholder');
+assert.match(template, /hls\.js@1\.7\.4\/dist\/hls\.min\.js/, 'HLS.js must be pinned');
+assert.match(template, /liveSyncDurationCount:6/);
+assert.match(template, /liveMaxLatencyDurationCount:12/);
+assert.match(template, /maxBufferLength:45/);
+assert.match(template, /maxMaxBufferLength:60/);
+assert.match(template, /scheme=skylite;package=it\.davidealpegiani\.skylite/);
+assert.match(template, /Sky-Player-Lite\.apk/);
+assert.doesNotMatch(template, /cast_sender|cast\.framework|castBtn|Google Cast|Trasmetti/i, 'exported player must not contain Cast');
+assert.match(kotlin, /assets\.open\("player-template\.html"\)/, 'Android APK must load the shared template asset');
+assert.match(web, /android\/app\/src\/main\/assets\/player-template\.html/, 'web exporter must use the same template');
+assert.match(web, /async function playerHtml\(/);
+console.log('Player template checks passed.');
