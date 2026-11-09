@@ -40,7 +40,7 @@ function setStatus(s){statusEl.textContent=s}
 function stopPlayer(){if(retryTimer){clearTimeout(retryTimer);retryTimer=null}if(watchdog){clearInterval(watchdog);watchdog=null}if(guardPoll){clearInterval(guardPoll);guardPoll=null}if(hls){try{hls.destroy()}catch(e){}hls=null}video.pause();video.removeAttribute('src');video.load();recovering=false;startupPending=false;bufferGuard=false}
 function bufferedAhead(){const t=video.currentTime||0;try{for(let i=0;i<video.buffered.length;i++){const a=video.buffered.start(i),b=video.buffered.end(i);if(t>=a-.5&&t<=b+.5)return Math.max(0,b-t)}}catch(e){}return 0}
 function updateBuffer(){const s=bufferedAhead();bufferText.textContent=s.toFixed(1)+' s';bufferFill.style.width=Math.min(100,s/TARGET_BUFFER_SECONDS*100)+'%';bufferFill.style.background=s<PAUSE_BUFFER_SECONDS?'#f06b4a':s<RESUME_BUFFER_SECONDS?'#f0a34a':s<20?'#e6cf58':'linear-gradient(90deg,#19b8df,#39dc9a)';return s}
-function requestPlay(){video.play().then(()=>{bufferGuard=false;startupPending=false;setStatus('In riproduzione: '+(CHANNELS[active]?.name||''))}).catch(()=>setStatus('Buffer pronto. Premi Play per avviare '+(CHANNELS[active]?.name||'')))}
+function requestPlay(){startupPending=false;bufferGuard=false;video.play().then(()=>{setStatus('In riproduzione: '+(CHANNELS[active]?.name||''))}).catch(()=>setStatus('Buffer pronto. Premi Play per avviare '+(CHANNELS[active]?.name||'')))}
 function checkBufferPolicy(){
  const ahead=updateBuffer();
  if(startupPending){
