@@ -20,6 +20,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Verify shared HTML player template
+        run: node android/scripts/verify-player-template.mjs
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
