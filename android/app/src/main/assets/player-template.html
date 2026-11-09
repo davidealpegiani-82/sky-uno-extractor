@@ -65,7 +65,7 @@ const videoStage=document.getElementById('videoStage'),fullscreenBtn=document.ge
 async function toggleFullscreen(){try{if(document.fullscreenElement){await document.exitFullscreen()}else if(videoStage.requestFullscreen){await videoStage.requestFullscreen()}else if(video.webkitEnterFullscreen){video.webkitEnterFullscreen()}else{setStatus('Schermo intero non supportato da questo browser.')}}catch(e){if(video.webkitEnterFullscreen){try{video.webkitEnterFullscreen()}catch(_){setStatus('Impossibile attivare lo schermo intero.')}}else setStatus('Impossibile attivare lo schermo intero.')}}
 fullscreenBtn.addEventListener('click',toggleFullscreen);
 document.addEventListener('fullscreenchange',()=>{fullscreenBtn.textContent=document.fullscreenElement?'⤢ Esci da schermo intero':'⛶ Schermo intero'});
-video.addEventListener('playing',()=>{lastTime=video.currentTime||0;lastProgress=Date.now();if(!startupPending&&!bufferGuard)setStatus('In riproduzione: '+(CHANNELS[active]?.name||''))});
+video.addEventListener('playing',()=>{lastTime=video.currentTime||0;lastProgress=Date.now();if(!startupPending)setStatus('In riproduzione: '+(CHANNELS[active]?.name||''))});
 video.addEventListener('timeupdate',()=>{const t=video.currentTime||0;if(Math.abs(t-lastTime)>=.2){lastTime=t;lastProgress=Date.now()}checkBufferPolicy()});
 video.addEventListener('progress',checkBufferPolicy);video.addEventListener('waiting',()=>{if(!video.paused){setStatus('Buffering: richiesta di nuovi segmenti…');keepBufferLoading()}checkBufferPolicy()});video.addEventListener('error',()=>{if(active>=0)recover('Errore di riproduzione')});
 const list=document.getElementById('list');
