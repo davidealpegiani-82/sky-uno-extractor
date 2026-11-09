@@ -4,18 +4,23 @@ import android.app.Activity
 import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
+import androidx.media3.exoplayer.DefaultLivePlaybackSpeedControl
+import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.hls.HlsMediaSource
 import androidx.media3.ui.PlayerView
@@ -27,6 +32,27 @@ class MainActivity : Activity() {
     private lateinit var playerView: PlayerView
     private lateinit var titleView: TextView
     private lateinit var statusView: TextView
+    private lateinit var diagnosticsView: TextView
+    private val retryHandler = Handler(Looper.getMainLooper())
+    private val diagnosticsTask = object : Runnable {
+        override fun run() {
+            val current = player
+            if (current == null || !::diagnosticsView.isInitialized || isFinishing || isDestroyed) return
+            val aheadMs = (current.bufferedPosition - current.currentPosition).coerceAtLeast(0L)
+            val state = when (current.playbackState) {
+                Player.STATE_BUFFERING -> "BUFFERING"
+                Player.STATE_READY -> "READY"
+                Player.STATE_IDLE -> "IDLE"
+                Player.STATE_ENDED -> "ENDED"
+                else -> "?"
+            }
+            diagnosticsView.text = "HLS: $state · buffer ${aheadMs / 1000}s · " +
+                if (current.isLoading) "download attivo" else "download in attesa"
+            retryHandler.postDelayed(this, 1000L)
+        }
+    }
+    private var retryCount = 0
+    private var retryTask: Runnable? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -70,6 +96,13 @@ class MainActivity : Activity() {
         }
         root.addView(titleView)
         root.addView(statusView)
+        diagnosticsView = TextView(this).apply {
+            text = "HLS: in attesa · buffer 0s"
+            setTextColor(Color.rgb(112, 196, 220))
+            textSize = 11f
+            setPadding(20, 0, 20, 8)
+        }
+        root.addView(diagnosticsView)
         root.addView(playerView)
         setContentView(root)
     }
@@ -91,8 +124,19 @@ class MainActivity : Activity() {
             .setReadTimeoutMs(45_000)
             .setAllowCrossProtocolRedirects(true)
 
+        val liveSpeedControl = DefaultLivePlaybackSpeedControl.Builder()
+            .setFallbackMinPlaybackSpeed(0.97f)
+            .setFallbackMaxPlaybackSpeed(1.03f)
+            .setTargetLiveOffsetIncrementOnRebufferMs(10_000)
+            .build()
+
+        val mediaSourceFactory = HlsMediaSource.Factory(httpFactory)
+            .setLoadErrorHandlingPolicy(DefaultLoadErrorHandlingPolicy(6))
+
         player = ExoPlayer.Builder(this)
             .setLoadControl(loadControl)
+            .setLivePlaybackSpeedControl(liveSpeedControl)
+            .setMediaSourceFactory(mediaSourceFactory)
             .build()
             .also { exo ->
                 playerView.player = exo
@@ -107,7 +151,34 @@ class MainActivity : Activity() {
                     }
 
                     override fun onPlayerError(error: PlaybackException) {
-                        statusView.text = "Errore di riproduzione: ${error.errorCodeName}. Riprova il canale."
+                        val retryable = error.errorCodeName.contains("IO_") ||
+                            error.errorCodeName.contains("BEHIND_LIVE_WINDOW")
+                        val delays = longArrayOf(2_000L, 4_000L, 8_000L, 12_000L, 15_000L)
+                        if (retryable && retryCount < delays.size) {
+                            val delay = delays[retryCount++]
+                            statusView.text = "Connessione instabile. Nuovo tentativo tra ${delay / 1000} s…"
+                            retryTask?.let { retryHandler.removeCallbacks(it) }
+                            val task = Runnable {
+                                val current = player ?: return@Runnable
+                                if (error.errorCodeName.contains("BEHIND_LIVE_WINDOW")) {
+                                    current.seekToDefaultPosition()
+                                }
+                                current.prepare()
+                                current.playWhenReady = true
+                            }
+                            retryTask = task
+                            retryHandler.postDelayed(task, delay)
+                        } else {
+                            statusView.text = "Errore di riproduzione: ${error.errorCodeName}. Riprova il canale."
+                        }
+                    }
+
+                    override fun onIsPlayingChanged(isPlaying: Boolean) {
+                        if (isPlaying) {
+                            retryHandler.postDelayed({
+                                if (player?.isPlaying == true) retryCount = 0
+                            }, 30_000L)
+                        }
                     }
                 })
             }
@@ -147,6 +218,8 @@ class MainActivity : Activity() {
                     .setTargetOffsetMs(45_000)
                     .setMinOffsetMs(30_000)
                     .setMaxOffsetMs(90_000)
+                    .setMinPlaybackSpeed(0.97f)
+                    .setMaxPlaybackSpeed(1.03f)
                     .build()
             )
             .build()
@@ -156,8 +229,10 @@ class MainActivity : Activity() {
                 .setConnectTimeoutMs(15_000)
                 .setReadTimeoutMs(45_000)
                 .setAllowCrossProtocolRedirects(true)
-        ).createMediaSource(mediaItem)
+        ).setLoadErrorHandlingPolicy(DefaultLoadErrorHandlingPolicy(6)).createMediaSource(mediaItem)
 
+        retryTask?.let { retryHandler.removeCallbacks(it) }
+        retryCount = 0
         player?.apply {
             stop()
             clearMediaItems()
@@ -168,6 +243,7 @@ class MainActivity : Activity() {
     }
 
     override fun onStop() {
+        retryHandler.removeCallbacks(diagnosticsTask)
         resumeAfterBackground = player?.playWhenReady == true && (player?.mediaItemCount ?: 0) > 0
         player?.pause()
         super.onStop()
@@ -175,6 +251,8 @@ class MainActivity : Activity() {
 
     override fun onStart() {
         super.onStart()
+        retryHandler.removeCallbacks(diagnosticsTask)
+        retryHandler.post(diagnosticsTask)
         if (resumeAfterBackground && (player?.mediaItemCount ?: 0) > 0) {
             player?.playWhenReady = true
         }
@@ -182,6 +260,9 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+        retryHandler.removeCallbacks(diagnosticsTask)
+        retryTask?.let { retryHandler.removeCallbacks(it) }
+        retryHandler.removeCallbacksAndMessages(null)
         playerView.player = null
         player?.release()
         player = null
