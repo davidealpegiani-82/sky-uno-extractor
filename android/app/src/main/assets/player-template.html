@@ -7,7 +7,7 @@
 *{box-sizing:border-box}html,body{height:100%;margin:0}body{background:#080b12;color:#f4f7fb;font:15px system-ui;overflow:hidden}
 .app{height:100dvh;max-width:1000px;margin:auto;display:flex;flex-direction:column;min-height:0;background:linear-gradient(180deg,#101a2a,#080b12 48%)}
 .top{height:48px;flex:0 0 48px;padding:0 16px;display:flex;align-items:center;background:#111a29;border-bottom:1px solid #26374d;font-weight:850;letter-spacing:.08em}
-.video{height:min(40dvh,270px);min-height:180px;flex:0 0 auto;background:#000;box-shadow:0 8px 24px #0008}video{display:block;width:100%;height:100%;object-fit:contain;background:#000}
+.video{height:min(40dvh,270px);min-height:180px;flex:0 0 auto;background:#000;box-shadow:0 8px 24px #0008;position:relative}.video:fullscreen,.video:-webkit-full-screen{width:100vw;height:100dvh;min-height:100dvh;max-height:none;display:flex;align-items:center;justify-content:center;background:#000;box-shadow:none;z-index:9999}.video:fullscreen video,.video:-webkit-full-screen video{width:100%;height:100%;max-height:100dvh;object-fit:contain}video{display:block;width:100%;height:100%;object-fit:contain;background:#000}video:fullscreen,video:-webkit-full-screen{width:100vw;height:100dvh;max-height:100dvh;object-fit:contain;background:#000}
 .status{flex:0 0 auto;padding:7px 14px 2px;color:#c4d0df;font-size:12px;min-height:25px}
 .buffer{padding:3px 14px 8px}.buffer-head{display:flex;justify-content:space-between;font-size:11px;color:#9eb1c8;margin-bottom:5px}.track{height:7px;border-radius:99px;background:#263449;overflow:hidden}.fill{height:100%;width:0;background:linear-gradient(90deg,#19b8df,#39dc9a);border-radius:99px;transition:width .25s}
 .controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:4px 12px 9px}.lite{border:0;border-radius:10px;padding:10px 12px;background:#116b50;color:#fff;font:700 12px system-ui}.install{color:#39d7ff;font-size:12px;font-weight:700;text-decoration:none;padding:8px}
@@ -20,10 +20,10 @@
 </head>
 <body><main class="app">
 <header class="top">SKY PLAYER</header>
-<section class="video"><video id="video" controls playsinline webkit-playsinline preload="auto"></video></section>
+<section class="video" id="videoStage"><video id="video" controls playsinline webkit-playsinline preload="auto"></video></section>
 <div class="status" id="status">Seleziona un canale</div>
 <div class="buffer"><div class="buffer-head"><span>Buffer effettivo</span><strong id="bufferText">—</strong></div><div class="track"><div class="fill" id="bufferFill"></div></div></div>
-<div class="controls"><button class="lite" id="openLite" type="button">▶ Apri con Player Lite</button><a class="install" href="https://github.com/davidealpegiani-82/sky-uno-extractor/releases/download/player-lite-latest/Sky-Player-Lite.apk" download>Scarica / installa Player Lite APK</a></div>
+<div class="controls"><button class="lite" id="fullscreenBtn" type="button">⛶ Schermo intero</button><button class="lite" id="openLite" type="button">▶ Apri con Player Lite</button><a class="install" href="https://github.com/davidealpegiani-82/sky-uno-extractor/releases/download/player-lite-latest/Sky-Player-Lite.apk" download>Scarica / installa Player Lite APK</a></div>
 <section class="list" id="list"><div class="list-title">TUTTI I CANALI</div></section>
 </main>
 <script>
@@ -33,44 +33,41 @@ const APK_URL='https://github.com/davidealpegiani-82/sky-uno-extractor/releases/
 const video=document.getElementById('video'),statusEl=document.getElementById('status'),bufferText=document.getElementById('bufferText'),bufferFill=document.getElementById('bufferFill');
 const android=/Android/i.test(navigator.userAgent);
 let hls=null,active=-1,retryTimer=null,watchdog=null,retryCount=0,lastTime=0,lastProgress=Date.now(),recovering=false;
-let startupPending=false,startupSince=0,bufferGuard=false,guardPoll=null;
-const START_BUFFER_SECONDS=6,RESUME_BUFFER_SECONDS=15,PAUSE_BUFFER_SECONDS=6,TARGET_BUFFER_SECONDS=90;
+let startupPending=false,startupSince=0,lastLoadKick=0;
+const START_BUFFER_SECONDS=6,MIN_BUFFER_SECONDS=30,TARGET_BUFFER_SECONDS=90;
 const retryDelays=[1000,2000,4000,8000,12000,15000];
 function setStatus(s){statusEl.textContent=s}
-function stopPlayer(){if(retryTimer){clearTimeout(retryTimer);retryTimer=null}if(watchdog){clearInterval(watchdog);watchdog=null}if(guardPoll){clearInterval(guardPoll);guardPoll=null}if(hls){try{hls.destroy()}catch(e){}hls=null}video.pause();video.removeAttribute('src');video.load();recovering=false;startupPending=false;bufferGuard=false}
+function stopPlayer(){if(retryTimer){clearTimeout(retryTimer);retryTimer=null}if(watchdog){clearInterval(watchdog);watchdog=null}if(hls){try{hls.destroy()}catch(e){}hls=null}video.pause();video.removeAttribute('src');video.load();recovering=false;startupPending=false}
 function bufferedAhead(){const t=video.currentTime||0;try{for(let i=0;i<video.buffered.length;i++){const a=video.buffered.start(i),b=video.buffered.end(i);if(t>=a-.5&&t<=b+.5)return Math.max(0,b-t)}}catch(e){}return 0}
-function updateBuffer(){const s=bufferedAhead();bufferText.textContent=s.toFixed(1)+' s';bufferFill.style.width=Math.min(100,s/TARGET_BUFFER_SECONDS*100)+'%';bufferFill.style.background=s<PAUSE_BUFFER_SECONDS?'#f06b4a':s<RESUME_BUFFER_SECONDS?'#f0a34a':s<20?'#e6cf58':'linear-gradient(90deg,#19b8df,#39dc9a)';return s}
-function requestPlay(){startupPending=false;bufferGuard=false;video.play().then(()=>{setStatus('In riproduzione: '+(CHANNELS[active]?.name||''))}).catch(()=>setStatus('Buffer pronto. Premi Play per avviare '+(CHANNELS[active]?.name||'')))}
+function updateBuffer(){const s=bufferedAhead();bufferText.textContent=s.toFixed(1)+' s';bufferFill.style.width=Math.min(100,s/TARGET_BUFFER_SECONDS*100)+'%';bufferFill.style.background=s<15?'#f06b4a':s<MIN_BUFFER_SECONDS?'#f0a34a':'linear-gradient(90deg,#19b8df,#39dc9a)';return s}
+function requestPlay(){startupPending=false;video.play().then(()=>{setStatus('In riproduzione: '+(CHANNELS[active]?.name||''))}).catch(()=>setStatus('Buffer pronto. Premi Play per avviare '+(CHANNELS[active]?.name||'')))}
+function keepBufferLoading(){if(!hls||bufferedAhead()>=MIN_BUFFER_SECONDS)return;const now=Date.now();if(now-lastLoadKick<5000)return;lastLoadKick=now;try{hls.startLoad(-1)}catch(e){}}
 function checkBufferPolicy(){
  const ahead=updateBuffer();
  if(startupPending){
   const waited=(Date.now()-startupSince)/1000;
   if(ahead>=START_BUFFER_SECONDS||(waited>=60&&ahead>=3)){requestPlay();return}
-  setStatus('Precaricamento buffer: '+ahead.toFixed(1)+' / '+START_BUFFER_SECONDS+' s');return;
+  setStatus('Precaricamento iniziale: '+ahead.toFixed(1)+' / '+START_BUFFER_SECONDS+' s');return;
  }
- if(bufferGuard){
-  if(ahead>=RESUME_BUFFER_SECONDS){requestPlay();return}
-  if(hls&&ahead<RESUME_BUFFER_SECONDS){try{hls.startLoad(-1)}catch(e){}}
-  setStatus('Recupero buffer: '+ahead.toFixed(1)+' / '+RESUME_BUFFER_SECONDS+' s');return;
- }
- if(!video.paused&&!video.ended&&ahead<=PAUSE_BUFFER_SECONDS){
-  bufferGuard=true;video.pause();if(hls){try{hls.startLoad(-1)}catch(e){}}
-  setStatus('Pausa di protezione: recupero del buffer…');
- }
+ if(!video.paused&&!video.ended&&ahead<MIN_BUFFER_SECONDS){keepBufferLoading();if(ahead<15)setStatus('Buffer in recupero: '+ahead.toFixed(1)+' s · caricamento attivo')}
 }
-function beginPrebuffer(){startupPending=true;startupSince=Date.now();bufferGuard=false;if(hls){try{hls.startLoad(-1)}catch(e){}}if(guardPoll)clearInterval(guardPoll);guardPoll=setInterval(checkBufferPolicy,500);checkBufferPolicy()}
+function beginPrebuffer(){startupPending=true;startupSince=Date.now();if(hls){try{hls.startLoad(-1)}catch(e){}}checkBufferPolicy()}
 function recover(reason){if(retryTimer||active<0)return;if(retryCount>=retryDelays.length){setStatus('Flusso non disponibile dopo i tentativi automatici. Seleziona di nuovo il canale per riprovare.');return}const delay=retryDelays[retryCount++];recovering=true;setStatus(reason+' · ripristino '+retryCount+'/'+retryDelays.length);retryTimer=setTimeout(()=>{retryTimer=null;if(active>=0)startChannel(active,true)},delay)}
 function startWatchdog(){if(watchdog)clearInterval(watchdog);lastTime=video.currentTime||0;lastProgress=Date.now();watchdog=setInterval(()=>{if(video.paused||video.ended||active<0)return;const t=video.currentTime||0;if(Math.abs(t-lastTime)>=.2){lastTime=t;lastProgress=Date.now();if(!recovering)retryCount=0}else if(Date.now()-lastProgress>15000)recover('Riproduzione bloccata')},4000)}
-function startChannel(i,retry=false){const c=CHANNELS[i];if(!c)return;active=i;if(retryTimer){clearTimeout(retryTimer);retryTimer=null}if(guardPoll){clearInterval(guardPoll);guardPoll=null}if(hls){try{hls.destroy()}catch(e){}hls=null}video.pause();video.removeAttribute('src');video.load();startupPending=false;bufferGuard=false;document.querySelectorAll('.channel').forEach((b,n)=>b.classList.toggle('active',n===i));setStatus((retry?'Ripristino: ':'Caricamento: ')+c.name);
- if(video.canPlayType('application/vnd.apple.mpegurl')){video.src=c.url;video.load();beginPrebuffer()}
- else if(window.Hls&&Hls.isSupported()){hls=new Hls({enableWorker:true,lowLatencyMode:false,liveSyncDurationCount:8,liveMaxLatencyDurationCount:24,maxBufferLength:90,maxMaxBufferLength:90,maxBufferSize:90*1000*1000,backBufferLength:30,maxBufferHole:.1,highBufferWatchdogPeriod:2,startFragPrefetch:true,testBandwidth:true,abrEwmaDefaultEstimate:2000000,abrBandWidthFactor:.8,abrBandWidthUpFactor:.7,fragLoadingTimeOut:45000,manifestLoadingTimeOut:30000,manifestLoadingMaxRetry:6,levelLoadingMaxRetry:6,fragLoadingMaxRetry:8,fragLoadingRetryDelay:1000,fragLoadingMaxRetryTimeout:45000,debug:false});hls.on(Hls.Events.MANIFEST_PARSED,()=>beginPrebuffer());hls.on(Hls.Events.FRAG_BUFFERED,()=>{if(startupPending||bufferGuard)checkBufferPolicy()});hls.on(Hls.Events.ERROR,(_,e)=>{if(e&&e.fatal)recover(e.type===Hls.ErrorTypes.NETWORK_ERROR?'Errore di rete':'Errore del flusso')});hls.loadSource(c.url);hls.attachMedia(video)}
+function startChannel(i,retry=false){const c=CHANNELS[i];if(!c)return;active=i;if(retryTimer){clearTimeout(retryTimer);retryTimer=null}if(hls){try{hls.destroy()}catch(e){}hls=null}video.pause();video.removeAttribute('src');video.load();startupPending=false;lastLoadKick=0;document.querySelectorAll('.channel').forEach((b,n)=>b.classList.toggle('active',n===i));setStatus((retry?'Ripristino: ':'Caricamento: ')+c.name);
+ if(video.canPlayType('application/vnd.apple.mpegurl')&&!(window.Hls&&Hls.isSupported())){video.src=c.url;video.load();beginPrebuffer()}
+ else if(window.Hls&&Hls.isSupported()){hls=new Hls({enableWorker:true,lowLatencyMode:false,liveSyncDurationCount:8,liveMaxLatencyDurationCount:24,maxBufferLength:90,maxMaxBufferLength:90,maxBufferSize:90*1000*1000,backBufferLength:30,maxBufferHole:.1,highBufferWatchdogPeriod:2,startFragPrefetch:true,testBandwidth:true,abrEwmaDefaultEstimate:2000000,abrBandWidthFactor:.8,abrBandWidthUpFactor:.7,fragLoadingTimeOut:45000,manifestLoadingTimeOut:30000,manifestLoadingMaxRetry:6,levelLoadingMaxRetry:6,fragLoadingMaxRetry:8,fragLoadingRetryDelay:1000,fragLoadingMaxRetryTimeout:45000,nudgeMaxRetry:6,debug:false});hls.on(Hls.Events.MANIFEST_PARSED,()=>beginPrebuffer());hls.on(Hls.Events.FRAG_BUFFERED,checkBufferPolicy);hls.on(Hls.Events.ERROR,(_,e)=>{if(e&&e.fatal)recover(e.type===Hls.ErrorTypes.NETWORK_ERROR?'Errore di rete':'Errore del flusso')});hls.loadSource(c.url);hls.attachMedia(video)}
  else setStatus('HLS non supportato da questo browser. Usa Apri con Player Lite su Android.');
  startWatchdog();updateBuffer()}
 function openLite(){if(active<0||!CHANNELS[active]){setStatus('Seleziona prima un canale.');return}const c=CHANNELS[active],q=new URLSearchParams({url:c.url,name:c.name});location.href='intent://play?'+q.toString()+'#Intent;scheme=skylite;package=it.davidealpegiani.skylite;S.browser_fallback_url='+encodeURIComponent(APK_URL)+';end'}
 document.getElementById('openLite').addEventListener('click',openLite);
+const videoStage=document.getElementById('videoStage'),fullscreenBtn=document.getElementById('fullscreenBtn');
+async function toggleFullscreen(){try{if(document.fullscreenElement){await document.exitFullscreen()}else if(videoStage.requestFullscreen){await videoStage.requestFullscreen()}else if(video.webkitEnterFullscreen){video.webkitEnterFullscreen()}else{setStatus('Schermo intero non supportato da questo browser.')}}catch(e){if(video.webkitEnterFullscreen){try{video.webkitEnterFullscreen()}catch(_){setStatus('Impossibile attivare lo schermo intero.')}}else setStatus('Impossibile attivare lo schermo intero.')}}
+fullscreenBtn.addEventListener('click',toggleFullscreen);
+document.addEventListener('fullscreenchange',()=>{fullscreenBtn.textContent=document.fullscreenElement?'⤢ Esci da schermo intero':'⛶ Schermo intero'});
 video.addEventListener('playing',()=>{lastTime=video.currentTime||0;lastProgress=Date.now();if(!startupPending&&!bufferGuard)setStatus('In riproduzione: '+(CHANNELS[active]?.name||''))});
 video.addEventListener('timeupdate',()=>{const t=video.currentTime||0;if(Math.abs(t-lastTime)>=.2){lastTime=t;lastProgress=Date.now()}checkBufferPolicy()});
-video.addEventListener('progress',checkBufferPolicy);video.addEventListener('waiting',()=>{if(!video.paused){setStatus('Buffering…');if(hls){try{hls.startLoad(-1)}catch(e){}}}checkBufferPolicy()});video.addEventListener('error',()=>{if(active>=0)recover('Errore di riproduzione')});
+video.addEventListener('progress',checkBufferPolicy);video.addEventListener('waiting',()=>{if(!video.paused){setStatus('Buffering: richiesta di nuovi segmenti…');keepBufferLoading()}checkBufferPolicy()});video.addEventListener('error',()=>{if(active>=0)recover('Errore di riproduzione')});
 const list=document.getElementById('list');
 CHANNELS.forEach((c,i)=>{const row=document.createElement('div');row.className='row';const b=document.createElement('button');b.type='button';b.className='channel';b.setAttribute('aria-label','Riproduci '+c.name);const logo=document.createElement('span');logo.className='logo';if(c.logo){const img=document.createElement('img');img.alt='';img.loading='lazy';img.src=c.logo;img.onerror=()=>{logo.textContent=(c.name||'TV').charAt(0).toUpperCase()};logo.appendChild(img)}else logo.textContent=(c.name||'TV').charAt(0).toUpperCase();const name=document.createElement('span');name.className='name';name.textContent=c.name;const live=document.createElement('span');live.className='live';live.textContent='LIVE';b.append(logo,name,live);b.addEventListener('click',()=>{retryCount=0;startChannel(i)});row.appendChild(b);if(android){const app=document.createElement('button');app.type='button';app.className='native';app.textContent='APP';app.setAttribute('aria-label','Apri '+c.name+' in Player Lite');app.addEventListener('click',()=>{active=i;openLite()});row.appendChild(app)}list.appendChild(row)});
 if(!CHANNELS.length){setStatus('Questo player non contiene canali. Riesporta i canali da Sky Extractor.')}else startChannel(0);
