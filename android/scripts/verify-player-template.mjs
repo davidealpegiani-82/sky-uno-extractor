@@ -10,7 +10,7 @@ assert.match(template, /liveSyncDurationCount:8/);
 assert.match(template, /liveMaxLatencyDurationCount:24/);
 assert.match(template, /maxBufferLength:90/);
 assert.match(template, /maxMaxBufferLength:90/);
-assert.match(template, /START_BUFFER_SECONDS=5/);
+assert.match(template, /START_BUFFER_SECONDS=6/);
 assert.match(template, /RESUME_BUFFER_SECONDS=15/);
 assert.match(template, /PAUSE_BUFFER_SECONDS=6/);
 assert.ok(template.includes('function beginPrebuffer()'), 'startup prebuffer must be implemented');
