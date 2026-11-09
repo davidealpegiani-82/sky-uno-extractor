@@ -184,12 +184,6 @@ class MainActivity : Activity() {
             }
     }
 
-    override fun onStart() {
-        super.onStart()
-        retryHandler.removeCallbacks(diagnosticsTask)
-        retryHandler.post(diagnosticsTask)
-    }
-
     override fun onNewIntent(intent: android.content.Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
@@ -257,6 +251,8 @@ class MainActivity : Activity() {
 
     override fun onStart() {
         super.onStart()
+        retryHandler.removeCallbacks(diagnosticsTask)
+        retryHandler.post(diagnosticsTask)
         if (resumeAfterBackground && (player?.mediaItemCount ?: 0) > 0) {
             player?.playWhenReady = true
         }
