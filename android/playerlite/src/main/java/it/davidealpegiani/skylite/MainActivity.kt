@@ -23,6 +23,7 @@ import androidx.media3.ui.PlayerView
 @UnstableApi
 class MainActivity : Activity() {
     private var player: ExoPlayer? = null
+    private var resumeAfterBackground = false
     private lateinit var playerView: PlayerView
     private lateinit var titleView: TextView
     private lateinit var statusView: TextView
@@ -167,8 +168,17 @@ class MainActivity : Activity() {
     }
 
     override fun onStop() {
-        super.onStop()
+        resumeAfterBackground = player?.playWhenReady == true && (player?.mediaItemCount ?: 0) > 0
         player?.pause()
+        super.onStop()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        if (resumeAfterBackground && (player?.mediaItemCount ?: 0) > 0) {
+            player?.playWhenReady = true
+        }
+        resumeAfterBackground = false
     }
 
     override fun onDestroy() {
