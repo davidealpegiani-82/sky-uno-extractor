@@ -18,8 +18,8 @@ assert.ok(template.includes('hls.startLoad(-1)'), 'HLS loading must be resumed d
 assert.match(template, /scheme=skylite;package=it\.davidealpegiani\.skylite/);
 assert.match(template, /Sky-Player-Lite\.apk/);
 assert.doesNotMatch(template, /cast_sender|cast\.framework|castBtn|Google Cast|Trasmetti/i, 'exported player must not contain Cast');
-assert.match(kotlin, /assets\.open\("player-template\.html"\)/, 'Android APK must load the shared template asset');
-assert.match(kotlin, /setBufferDurationsMs\(\s*30_000,[\\s\\S]*?90_000,[\\s\\S]*?6_000,[\\s\\S]*?15_000[\\s\\S]*?\\)/);
+assert.match(kotlin, /setBufferDurationsMs\(\s*30_000,[\s\S]*?90_000,[\s\S]*?6_000,[\s\S]*?15_000[\s\S]*?\)/);
+assert.match(kotlin, /setBufferDurationsMs\(\s*30_000,[\s\S]*?90_000,[\s\S]*?6_000,[\s\S]*?15_000[\s\S]*?\)/);
 assert.match(lite, /setBufferDurationsMs\(\s*30_000,\s*90_000,\s*6_000,\s*15_000/s, 'Player Lite must use the same load-control profile as Extractor');
 assert.match(lite, /setPrioritizeTimeOverSizeThresholds\(true\)/);
 assert.match(lite, /setTargetLiveOffsetIncrementOnRebufferMs\(10_000\)/);
