@@ -8,6 +8,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -23,21 +24,28 @@ import androidx.fragment.app.FragmentActivity
 import androidx.mediarouter.app.MediaRouteButton
 import androidx.media3.cast.CastPlayer
 import androidx.media3.cast.MediaRouteButtonFactory
+import androidx.media3.common.C
 import androidx.media3.common.DeviceInfo
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
+import androidx.media3.exoplayer.DefaultLivePlaybackSpeedControl
+import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.hls.HlsMediaSource
+import androidx.media3.exoplayer.source.LoadEventInfo
+import androidx.media3.exoplayer.source.MediaLoadData
 import androidx.media3.ui.PlayerView
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedReader
+import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 import java.nio.charset.StandardCharsets
@@ -50,6 +58,7 @@ data class TvChannel(
     var selected: Boolean = true
 )
 
+@OptIn(UnstableApi::class)
 class MainActivity : FragmentActivity() {
     private val channels = mutableListOf<TvChannel>()
     private lateinit var mainContainer: LinearLayout
@@ -61,6 +70,7 @@ class MainActivity : FragmentActivity() {
     private lateinit var playerDock: LinearLayout
     private lateinit var fullscreenContainer: FrameLayout
     private lateinit var status: TextView
+    private lateinit var playbackInfo: TextView
     private lateinit var count: TextView
     private lateinit var playerView: PlayerView
     private lateinit var localPlayer: ExoPlayer
@@ -74,6 +84,28 @@ class MainActivity : FragmentActivity() {
     private var playbackRetryCount = 0
     private var playbackRetryTask: Runnable? = null
     private var stablePlaybackTask: Runnable? = null
+    // Invalida i tentativi appartenenti al canale precedente.
+    private var playbackGeneration = 0
+
+    // Diagnostica visibile: misura il buffer realmente disponibile durante i blocchi.
+    private val playbackInfoTask = object : Runnable {
+        override fun run() {
+            if (!::player.isInitialized || !::playbackInfo.isInitialized || isFinishing || isDestroyed) return
+            val state = when (player.playbackState) {
+                Player.STATE_IDLE -> "IDLE"
+                Player.STATE_BUFFERING -> "BUFFERING"
+                Player.STATE_READY -> "READY"
+                Player.STATE_ENDED -> "ENDED"
+                else -> "?"
+            }
+            val aheadMs = (player.bufferedPosition - player.currentPosition).coerceAtLeast(0L)
+            val liveOffsetMs = player.currentLiveOffset
+            val liveText = if (liveOffsetMs == C.TIME_UNSET) "n/d" else "${liveOffsetMs / 1000}s"
+            playbackInfo.text = "HLS: $state · buffer ${aheadMs / 1000}s · live $liveText · " +
+                if (player.isLoading) "download attivo" else "download fermo"
+            retryHandler.postDelayed(this, 1000L)
+        }
+    }
 
     companion object {
         private const val PICK_FILE = 4101
@@ -89,31 +121,94 @@ class MainActivity : FragmentActivity() {
         window.statusBarColor = BG
         window.navigationBarColor = BG
         window.decorView.systemUiVisibility = 0
-        // Buffer live equilibrato: avvio ragionevolmente rapido, ma più margine
-        // per assorbire oscillazioni di rete senza accumulare minuti di ritardo.
+        // Buffer conservativo per HLS live: mantiene più segmenti in anticipo,
+        // senza richiedere attese eccessive all'avvio.
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                20_000, // buffer minimo
-                60_000, // buffer massimo
-                3_000,  // avvio iniziale
-                6_000   // ripresa dopo un rebuffer
+                30_000, // margine di precaricamento coerente con il ritardo live target
+                90_000, // margine massimo per oscillazioni prolungate
+                6_000, // avvio iniziale
+                15_000 // ripresa dopo un vero esaurimento del buffer
             )
             .setPrioritizeTimeOverSizeThresholds(true)
+            .build()
+
+        // Dopo ogni rebuffer Media3 aumenta il margine dal bordo live, così il
+        // player smette di inseguire segmenti pubblicati in ritardo dal server.
+        val liveSpeedControl = DefaultLivePlaybackSpeedControl.Builder()
+            .setFallbackMinPlaybackSpeed(0.97f)
+            .setFallbackMaxPlaybackSpeed(1.03f)
+            .setTargetLiveOffsetIncrementOnRebufferMs(10_000)
             .build()
 
         // Timeout espliciti e retry progressivi gestiti da Media3.
         val httpDataSourceFactory = DefaultHttpDataSource.Factory()
             .setConnectTimeoutMs(15_000)
-            .setReadTimeoutMs(25_000)
+            .setReadTimeoutMs(45_000)
             .setAllowCrossProtocolRedirects(true)
 
         val hlsMediaSourceFactory = HlsMediaSource.Factory(httpDataSourceFactory)
-            .setLoadErrorHandlingPolicy(DefaultLoadErrorHandlingPolicy(5))
+            .setLoadErrorHandlingPolicy(DefaultLoadErrorHandlingPolicy(6))
 
         localPlayer = ExoPlayer.Builder(this)
             .setLoadControl(loadControl)
+            .setLivePlaybackSpeedControl(liveSpeedControl)
             .setMediaSourceFactory(hlsMediaSourceFactory)
             .build()
+
+        // Diagnostica HLS: registra manifest/segmenti e problemi HTTP senza
+        // esporre URL completi o token di accesso nei log.
+        localPlayer.addAnalyticsListener(object : AnalyticsListener {
+            override fun onLoadStarted(
+                eventTime: AnalyticsListener.EventTime,
+                loadEventInfo: LoadEventInfo,
+                mediaLoadData: MediaLoadData
+            ) {
+                val kind = when (mediaLoadData.dataType) {
+                    C.DATA_TYPE_MANIFEST -> "manifest"
+                    C.DATA_TYPE_MEDIA -> "segment"
+                    else -> "type-" + mediaLoadData.dataType
+                }
+                Log.d(
+                    "SkyHLS",
+                    "load start=" + kind + " host=" + (loadEventInfo.dataSpec.uri.host ?: "?")
+                )
+            }
+
+            override fun onLoadCompleted(
+                eventTime: AnalyticsListener.EventTime,
+                loadEventInfo: LoadEventInfo,
+                mediaLoadData: MediaLoadData
+            ) {
+                val kind = when (mediaLoadData.dataType) {
+                    C.DATA_TYPE_MANIFEST -> "manifest"
+                    C.DATA_TYPE_MEDIA -> "segment"
+                    else -> "type-" + mediaLoadData.dataType
+                }
+                Log.d(
+                    "SkyHLS",
+                    "load=" + kind + " host=" + (loadEventInfo.dataSpec.uri.host ?: "?") +
+                        " bytes=" + loadEventInfo.bytesLoaded +
+                        " durationMs=" + loadEventInfo.loadDurationMs
+                )
+            }
+
+            override fun onLoadError(
+                eventTime: AnalyticsListener.EventTime,
+                loadEventInfo: LoadEventInfo,
+                mediaLoadData: MediaLoadData,
+                error: IOException,
+                wasCanceled: Boolean
+            ) {
+                Log.w(
+                    "SkyHLS",
+                    "load error host=" + (loadEventInfo.dataSpec.uri.host ?: "?") +
+                        " canceled=" + wasCanceled + " " +
+                        error.javaClass.simpleName + ": " +
+                        (error.message ?: "").replace(Regex("https?://\\S+"), "[indirizzo omesso]")
+                )
+            }
+        })
         // Google Cast è opzionale: un problema del framework Cast non deve
         // impedire l'avvio dell'estrattore o la riproduzione locale.
         player = try {
@@ -133,17 +228,31 @@ class MainActivity : FragmentActivity() {
                 val detail = generateSequence(error as Throwable?) { it.cause }
                     .take(4)
                     .mapNotNull { it.message?.takeIf { message -> message.isNotBlank() } }
+                    .map { it.replace(Regex("https?://\\S+"), "[indirizzo omesso]") }
                     .joinToString(" → ")
+                Log.e(
+                    "SkyHLS",
+                    "player error code=" + error.errorCodeName +
+                        " positionMs=" + player.currentPosition +
+                        " bufferedMs=" + player.totalBufferedDuration +
+                        " liveOffsetMs=" + player.currentLiveOffset
+                )
                 val retryable = error.errorCodeName.contains("IO_") ||
                     error.errorCodeName.contains("BEHIND_LIVE_WINDOW")
-                if (retryable && playbackRetryCount < 3) {
-                    val delays = longArrayOf(2_000L, 5_000L, 10_000L)
+                if (retryable && playbackRetryCount < 5) {
+                    val delays = longArrayOf(2_000L, 4_000L, 8_000L, 12_000L, 15_000L)
                     val delay = delays[playbackRetryCount++]
-                    status.text = "Connessione instabile. Nuovo tentativo tra ${delay / 1000} s…"
+                    val failedGeneration = playbackGeneration
+                    status.text = "Connessione instabile. Nuovo tentativo tra " + (delay / 1000) + " s…"
                     playbackRetryTask?.let { retryHandler.removeCallbacks(it) }
                     val task = Runnable {
-                        if (!isFinishing && !isDestroyed && ::player.isInitialized) {
+                        if (!isFinishing && !isDestroyed && ::player.isInitialized &&
+                            failedGeneration == playbackGeneration
+                        ) {
+                            // Un seek è necessario solo se ExoPlayer segnala esplicitamente
+                            // BEHIND_LIVE_WINDOW: mai durante un normale buffering.
                             if (error.errorCodeName.contains("BEHIND_LIVE_WINDOW")) {
+                                Log.w("SkyHLS", "live window persa: riallineamento al punto live predefinito")
                                 player.seekToDefaultPosition()
                             }
                             player.prepare()
@@ -198,11 +307,25 @@ class MainActivity : FragmentActivity() {
         }
         val channelName = data.getQueryParameter("name")?.takeIf { it.isNotBlank() } ?: "Canale selezionato"
         status.text = "Apertura da player web: $channelName"
+        playbackGeneration++
         try {
             playbackRetryTask?.let { retryHandler.removeCallbacks(it) }
             playbackRetryTask = null
             playbackRetryCount = 0
-            val mediaItem = MediaItem.Builder().setUri(streamUrl).setMimeType(MimeTypes.APPLICATION_M3U8).setMediaMetadata(MediaMetadata.Builder().setTitle(channelName).build()).build()
+            val mediaItem = MediaItem.Builder()
+                .setUri(streamUrl)
+                .setMimeType(MimeTypes.APPLICATION_M3U8)
+                .setMediaMetadata(MediaMetadata.Builder().setTitle(channelName).build())
+                .setLiveConfiguration(
+                    MediaItem.LiveConfiguration.Builder()
+                        .setTargetOffsetMs(45_000)
+                        .setMinOffsetMs(30_000)
+                        .setMaxOffsetMs(90_000)
+                        .setMinPlaybackSpeed(0.97f)
+                        .setMaxPlaybackSpeed(1.03f)
+                        .build()
+                )
+                .build()
             player.setMediaItem(mediaItem)
             player.prepare()
             player.playWhenReady = true
@@ -293,6 +416,13 @@ class MainActivity : FragmentActivity() {
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(176))
         }
         playerDock.addView(playerView)
+        playbackInfo = TextView(this).apply {
+            text = "HLS: in attesa del flusso"
+            textSize = 10f
+            setTextColor(MUTED)
+            setPadding(dp(3), dp(3), dp(3), dp(2))
+        }
+        playerDock.addView(playbackInfo)
         mainContainer.addView(playerDock, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
         ))
@@ -549,13 +679,27 @@ class MainActivity : FragmentActivity() {
 
     private fun playChannel(index: Int) {
         val channel = channels.getOrNull(index) ?: return
+        playbackGeneration++
         status.text = "Avvio: ${channel.name}"
         try {
             playbackRetryTask?.let { retryHandler.removeCallbacks(it) }
             playbackRetryTask = null
             playbackRetryCount = 0
             // Dichiarazione HLS esplicita anche per URL con token o senza estensione .m3u8.
-            val mediaItem = MediaItem.Builder().setUri(channel.url).setMimeType(MimeTypes.APPLICATION_M3U8).setMediaMetadata(MediaMetadata.Builder().setTitle(channel.name).build()).build()
+            val mediaItem = MediaItem.Builder()
+                .setUri(channel.url)
+                .setMimeType(MimeTypes.APPLICATION_M3U8)
+                .setMediaMetadata(MediaMetadata.Builder().setTitle(channel.name).build())
+                .setLiveConfiguration(
+                    MediaItem.LiveConfiguration.Builder()
+                        .setTargetOffsetMs(45_000)
+                        .setMinOffsetMs(30_000)
+                        .setMaxOffsetMs(90_000)
+                        .setMinPlaybackSpeed(0.97f)
+                        .setMaxPlaybackSpeed(1.03f)
+                        .build()
+                )
+                .build()
             player.setMediaItem(mediaItem)
             player.prepare()
             player.playWhenReady = true
@@ -752,7 +896,14 @@ if(C.length)startChannel(0,false);
     }
     private fun toast(message: String) = Toast.makeText(this, message, Toast.LENGTH_LONG).show()
 
+    override fun onStart() {
+        super.onStart()
+        retryHandler.removeCallbacks(playbackInfoTask)
+        retryHandler.post(playbackInfoTask)
+    }
+
     override fun onStop() {
+        retryHandler.removeCallbacks(playbackInfoTask)
         // Non lasciare il flusso attivo quando l'app passa davvero in background.
         // Il cambio orientamento è gestito da configChanges nel manifest.
         playbackRetryTask?.let { retryHandler.removeCallbacks(it) }
