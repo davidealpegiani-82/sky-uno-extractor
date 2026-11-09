@@ -4,4 +4,4 @@ dependencyResolutionManagement {
     repositories { google(); mavenCentral() }
 }
 rootProject.name = "SkyUnoExtractor"
-include(":app")
+include(":app", ":playerlite")
