@@ -736,15 +736,27 @@ class MainActivity : FragmentActivity() {
 <title>Sky Player</title>
 <style>
 *{box-sizing:border-box}
-body{margin:0;background:#080b12;color:#f4f7fb;font:15px system-ui}
-.app{height:100dvh;display:flex;flex-direction:column}
-.top{padding:14px;background:#111a29;font-weight:800}
-.video{height:46dvh;min-height:230px;background:#000}
-video{width:100%;height:100%;object-fit:contain}
-.list{overflow:auto;padding:8px;flex:1}
-.channel{display:flex;width:100%;padding:14px;margin:4px 0;background:#121d2d;border:1px solid #293b52;border-radius:12px;color:white;text-align:left;font-weight:700}
-.channel.active{border-color:#39d7ff;color:#39d7ff}
-.status{padding:8px 12px;color:#9eacc0;font-size:12px}.cast{margin:4px 12px 10px;padding:11px 14px;border:1px solid #39d7ff;border-radius:10px;background:#10283a;color:#eafaff;font-weight:700}
+html,body{height:100%;margin:0}
+body{background:#080b12;color:#f4f7fb;font:15px system-ui;overflow:hidden}
+.app{height:100dvh;display:flex;flex-direction:column;min-height:0;background:linear-gradient(180deg,#101a2a 0%,#080b12 44%)}
+.top{height:48px;flex:0 0 48px;padding:0 16px;display:flex;align-items:center;justify-content:space-between;background:#111a29;border-bottom:1px solid #26374d;font-weight:850;letter-spacing:.08em}
+.top small{font-size:10px;letter-spacing:.12em;color:#ff626b;border:1px solid #69323a;border-radius:20px;padding:4px 8px}
+.video{height:min(42dvh,270px);min-height:190px;flex:0 0 auto;background:#000;box-shadow:0 8px 24px #0008}
+video{display:block;width:100%;height:100%;object-fit:contain;background:#000}
+.status{flex:0 0 auto;padding:7px 14px 2px;color:#c4d0df;font-size:12px;min-height:25px}
+#bufferInfo{padding-top:2px;padding-bottom:7px;color:#8fa5bd;font-size:11px}
+.cast{flex:0 0 auto;margin:2px 12px 8px;padding:10px 14px;border:1px solid #28627c;border-radius:11px;background:linear-gradient(100deg,#123149,#102238);color:#eafaff;font-weight:750}
+.list{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;padding:4px 12px max(16px,env(safe-area-inset-bottom))}
+.list-title{position:sticky;top:0;z-index:2;padding:9px 4px 10px;background:#080b12ee;color:#8fa5bd;font-size:11px;font-weight:800;letter-spacing:.12em;backdrop-filter:blur(10px)}
+.channel-row{display:flex;align-items:stretch;gap:8px;margin:0 0 8px}
+.channel{display:flex;align-items:center;gap:12px;flex:1;min-width:0;width:100%;min-height:66px;padding:10px 12px;margin:0;background:linear-gradient(110deg,#17263a,#101a29);border:1px solid #293b52;border-radius:14px;color:#f4f7fb;text-align:left;font:700 14px system-ui;transition:border-color .15s,background .15s}
+.channel.active{border-color:#39d7ff;background:linear-gradient(110deg,#12354a,#14283b);box-shadow:inset 3px 0 #39d7ff,0 0 16px #39d7ff18}
+.channel-logo{width:44px;height:44px;flex:0 0 44px;display:grid;place-items:center;overflow:hidden;border-radius:10px;background:#0a111d;border:1px solid #30435a;color:#39d7ff;font-size:17px;font-weight:850}
+.channel-logo img{width:100%;height:100%;object-fit:contain;padding:4px}
+.channel-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.channel-live{font-size:9px;font-weight:850;letter-spacing:.1em;color:#9aaec3;border:1px solid #3a4a60;border-radius:20px;padding:4px 7px}
+.channel.active .channel-live{color:#39d7ff;border-color:#28708a}
+.native{flex:0 0 auto;align-self:stretch;padding:0 11px;border:1px solid #344960;border-radius:12px;background:#17263a;color:#dce8f5;font-weight:700;font-size:11px}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/hls.js@1.7.4/dist/hls.min.js"></script>
 <script>window.__onGCastApiAvailable=function(ok){window.__skyCastAvailable=ok;document.dispatchEvent(new Event("sky-cast-ready"))};</script>
@@ -752,12 +764,12 @@ video{width:100%;height:100%;object-fit:contain}
 </head>
 <body>
 <div class="app">
-<div class="top">SKY PLAYER</div>
+<div class="top"><span>SKY PLAYER</span><small>LIVE TV</small></div>
 <div class="video"><video id="v" controls playsinline webkit-playsinline preload="auto"></video></div>
 <div class="status" id="status">Scegli un canale</div>
 <div class="status" id="bufferInfo">Buffer avanti: —</div>
 <button id="castBtn" class="cast">📺 Trasmetti</button>
-<div class="list" id="list"></div>
+<div class="list" id="list"><div class="list-title">TUTTI I CANALI</div></div>
 </div>
 <script>
 const C=__CHANNELS__;
@@ -864,9 +876,19 @@ v.addEventListener('timeupdate',function(){if(Math.abs((v.currentTime||0)-lastTi
 v.addEventListener('waiting',function(){if(!v.paused)updateStatus('Buffering…');});
 v.addEventListener('error',function(){if(active>=0)scheduleRecovery('Errore di riproduzione');});
 C.forEach(function(c,i){
- const row=document.createElement('div');row.style.display='flex';row.style.gap='6px';
- const b=document.createElement('button');b.className='channel';b.style.flex='1';b.textContent=c.name;b.onclick=function(){retries=0;startChannel(i,false)};row.appendChild(b);
- if(isAndroid){const n=document.createElement('button');n.className='channel';n.textContent='Apri nell’app';n.onclick=function(){openNative(i)};row.appendChild(n)}
+ const row=document.createElement('div');row.className='channel-row';
+ const b=document.createElement('button');b.type='button';b.className='channel';b.setAttribute('aria-label','Riproduci '+c.name);
+ const logo=document.createElement('span');logo.className='channel-logo';
+ if(c.logo){
+  const img=document.createElement('img');img.alt='';img.loading='lazy';img.src=c.logo;
+  img.onerror=function(){logo.textContent=(c.name||'TV').trim().charAt(0).toUpperCase();};
+  logo.appendChild(img);
+ }else{logo.textContent=(c.name||'TV').trim().charAt(0).toUpperCase();}
+ const name=document.createElement('span');name.className='channel-name';name.textContent=c.name;
+ const live=document.createElement('span');live.className='channel-live';live.textContent='LIVE';
+ b.appendChild(logo);b.appendChild(name);b.appendChild(live);
+ b.onclick=function(){retries=0;startChannel(i,false)};row.appendChild(b);
+ if(isAndroid){const n=document.createElement('button');n.type='button';n.className='native';n.textContent='APP';n.setAttribute('aria-label','Apri '+c.name+' nell’app');n.onclick=function(){openNative(i)};row.appendChild(n)}
  document.getElementById('list').appendChild(row);
 });
 if(C.length)startChannel(0,false);
