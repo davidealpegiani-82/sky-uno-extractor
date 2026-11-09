@@ -755,6 +755,7 @@ video{width:100%;height:100%;object-fit:contain}
 <div class="top">SKY PLAYER</div>
 <div class="video"><video id="v" controls playsinline webkit-playsinline preload="auto"></video></div>
 <div class="status" id="status">Scegli un canale</div>
+<div class="status" id="bufferInfo">Buffer avanti: —</div>
 <button id="castBtn" class="cast">📺 Trasmetti</button>
 <div class="list" id="list"></div>
 </div>
@@ -762,6 +763,7 @@ video{width:100%;height:100%;object-fit:contain}
 const C=__CHANNELS__;
 const v=document.getElementById('v');
 const status=document.getElementById('status');
+const bufferInfo=document.getElementById('bufferInfo');
 const isAndroid=/Android/i.test(navigator.userAgent);
 let castContext=null;
 function initCast(){if(!window.cast||!cast.framework)return;castContext=cast.framework.CastContext.getInstance();castContext.setOptions({receiverApplicationId:chrome.cast.media.DEFAULT_MEDIA_RECEIVER_APP_ID,autoJoinPolicy:chrome.cast.AutoJoinPolicy.ORIGIN_SCOPED});const b=document.getElementById("castBtn");b.onclick=castCurrent;}
@@ -781,6 +783,23 @@ function stopEngine(){
  v.pause();v.removeAttribute('src');v.load();recovering=false;
 }
 function updateStatus(message){status.textContent=message}
+function getBufferedAhead(){
+ const t=v.currentTime||0;
+ for(let i=0;i<v.buffered.length;i++){
+  const start=v.buffered.start(i),end=v.buffered.end(i);
+  if(t>=start-0.5&&t<=end+0.5)return Math.max(0,end-t);
+ }
+ return 0;
+}
+function updateBufferInfo(){
+ if(active<0){bufferInfo.textContent='Buffer avanti: —';return;}
+ const ahead=getBufferedAhead();
+ let liveDistance=null;
+ try{if(v.seekable.length)liveDistance=Math.max(0,v.seekable.end(v.seekable.length-1)-(v.currentTime||0));}catch(e){}
+ const engine=h?'HLS.js':'HLS nativo';
+ bufferInfo.textContent='Buffer avanti: '+ahead.toFixed(1)+' s · distanza dal live: '+(liveDistance===null?'n/d':liveDistance.toFixed(1)+' s')+' · '+engine;
+}
+setInterval(updateBufferInfo,1000);
 function scheduleRecovery(reason){
  if(retryTimer||active<0)return;
  if(retries>=retryDelays.length){updateStatus('Il flusso non risponde. Riprova selezionando nuovamente il canale.');return}
@@ -821,8 +840,8 @@ function startChannel(i,isRetry){
  }else if(window.Hls&&Hls.isSupported()){
   h=new Hls({
    enableWorker:true,lowLatencyMode:false,
-   liveSyncDurationCount:3,liveMaxLatencyDurationCount:6,
-   maxBufferLength:30,maxMaxBufferLength:60,backBufferLength:30,
+   liveSyncDurationCount:6,liveMaxLatencyDurationCount:12,
+   maxBufferLength:45,maxMaxBufferLength:60,backBufferLength:30,
    fragLoadingTimeOut:20000,manifestLoadingTimeOut:20000,
    manifestLoadingMaxRetry:4,levelLoadingMaxRetry:4,fragLoadingMaxRetry:6,
    debug:false
