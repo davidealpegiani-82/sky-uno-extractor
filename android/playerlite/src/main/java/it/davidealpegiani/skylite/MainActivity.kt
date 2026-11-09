@@ -168,14 +168,14 @@ class MainActivity : Activity() {
     }
 
     override fun onStop() {
-        resumeAfterBackground = player?.playWhenReady == true && player?.mediaItemCount ?: 0 > 0
+        resumeAfterBackground = player?.playWhenReady == true && (player?.mediaItemCount ?: 0) > 0
         player?.pause()
         super.onStop()
     }
 
     override fun onStart() {
         super.onStart()
-        if (resumeAfterBackground && player?.mediaItemCount ?: 0 > 0) {
+        if (resumeAfterBackground && (player?.mediaItemCount ?: 0) > 0) {
             player?.playWhenReady = true
         }
         resumeAfterBackground = false
