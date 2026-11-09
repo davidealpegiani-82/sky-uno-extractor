@@ -39,3 +39,15 @@ Package: `it.davidealpegiani.skyunoextractor`
 - Log di manifest e segmenti con host, byte, durata e tipo di errore; gli URL completi e i token non vengono registrati.
 
 Queste impostazioni riducono le cause di buffering introdotte dal client, ma non possono ricreare segmenti che il server non pubblica, correggere URL scaduti o superare limiti imposti dalla sorgente.
+
+
+## Revisione comparativa buffer — build 1.1.3
+
+Le configurazioni delle revisioni precedenti sono state confrontate separando il player Android nativo dal player HTML:
+
+- **Android / Media3 (mantenuta):** buffer 30–90 s, avvio 6 s, ripresa 15 s; offset live obiettivo 45 s, intervallo 30–90 s; velocità adattiva 0,97–1,03x e incremento dell'offset di 10 s dopo un rebuffer. Timeout connessione 15 s, lettura 45 s e policy errori Media3 con 6 tentativi.
+- **HTML / HLS.js (mantenuta):** sincronizzazione a 6 segmenti, latenza massima 12 segmenti, obiettivo buffer 45 s e tetto 60 s. Il player mostra il buffer effettivo e la distanza dal live.
+- **Configurazione HTML 60/120 s e 120 MB (non adottata):** aumentava molto il limite teorico senza garantire più segmenti disponibili e poteva aumentare memoria e ritardo; inoltre manteneva una sincronizzazione live più aggressiva (3/6 segmenti).
+- **Recupero:** niente seek durante il normale buffering; il riallineamento al live avviene solo per perdita esplicita della finestra HLS. Retry progressivi e invalidazione dei retry al cambio canale.
+
+La build 1.1.3 incorpora anche il player HTML con video fisso in alto e lista canali a scorrimento verticale. Le soglie sono obiettivi del client, non garanzie: manifest, segmenti, rete e server della sorgente restano determinanti.
