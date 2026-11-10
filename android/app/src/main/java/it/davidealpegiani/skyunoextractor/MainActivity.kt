@@ -18,6 +18,7 @@ import android.view.WindowManager
 import android.widget.FrameLayout
 import android.widget.Button
 import android.widget.CheckBox
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -485,6 +486,197 @@ class MainActivity : FragmentActivity() {
         root.addView(otherList)
         button("⬇  Esporta player HTML", true) { requestHtmlExport() }
         label("Suggerimento: tocca il nome di un canale per riprodurlo; usa la casella per includerlo o escluderlo dall'esportazione.", MUTED, 12f)
+
+        section("4 · SKY CLOUD SYNC")
+        label("Pubblica la configurazione selezionata per renderla disponibile ai soli Player che autorizzi. Il servizio trasferisce la lista, mai il video.", MUTED, 12f)
+        button("⚙  Configura Sky Cloud Sync", false) { showCloudSyncSettings() }
+        button("☁  Pubblica aggiornamento remoto", true) { publishRemoteConfiguration() }
+        val adminRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        adminRow.addView(buttonView("Autorizza Player") { approveCloudPlayer() }, LinearLayout.LayoutParams(0, dp(46), 1f))
+        adminRow.addView(space(8), LinearLayout.LayoutParams(dp(8), 1))
+        adminRow.addView(buttonView("Gestisci dispositivi") { showCloudDevices() }, LinearLayout.LayoutParams(0, dp(46), 1f))
+        root.addView(adminRow)
+    }
+
+    private fun showCloudSyncSettings() {
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(8), dp(20), 0)
+        }
+        val endpoint = EditText(this).apply {
+            hint = "https://nome-account.workers.dev"
+            setSingleLine(true)
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI
+            setText(CloudSyncAdmin.baseUrl(this@MainActivity))
+        }
+        val adminKey = EditText(this).apply {
+            hint = "Chiave amministratore (almeno 32 caratteri)"
+            setSingleLine(true)
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+        }
+        content.addView(labelForDialog("Indirizzo del servizio HTTPS"))
+        content.addView(endpoint)
+        content.addView(labelForDialog("Chiave amministratore · viene salvata cifrata nel dispositivo"))
+        content.addView(adminKey)
+        AlertDialog.Builder(this)
+            .setTitle("Configurazione Sky Cloud Sync")
+            .setView(content)
+            .setNegativeButton("Annulla", null)
+            .setPositiveButton("Salva", null)
+            .create().also { dialog ->
+                dialog.setOnShowListener {
+                    dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                        try {
+                            CloudSyncAdmin.saveSettings(
+                                this,
+                                endpoint.text.toString(),
+                                adminKey.text.toString().ifBlank { null }
+                            )
+                            dialog.dismiss()
+                            toast("Configurazione Cloud Sync salvata in modo protetto.")
+                        } catch (e: Exception) {
+                            toast(e.message ?: "Configurazione non valida.")
+                        }
+                    }
+                }
+                dialog.show()
+            }
+    }
+
+    private fun labelForDialog(value: String): TextView = TextView(this).apply {
+        text = value
+        textSize = 12f
+        setTextColor(MUTED)
+        setPadding(0, dp(10), 0, dp(2))
+    }
+
+    private fun runCloudAdminTask(task: () -> JSONObject, onSuccess: (JSONObject) -> Unit) {
+        status.text = "Connessione a Sky Cloud Sync…"
+        Thread {
+            try {
+                val result = task()
+                runOnUiThread {
+                    if (!isFinishing && !isDestroyed) onSuccess(result)
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    if (!isFinishing && !isDestroyed) {
+                        status.text = "Cloud Sync: ${e.message ?: "errore di connessione"}"
+                        toast(status.text.toString())
+                    }
+                }
+            }
+        }.start()
+    }
+
+    private fun publishRemoteConfiguration() {
+        val chosen = selectedChannels()
+        if (chosen.isEmpty()) {
+            toast("Seleziona almeno un canale da pubblicare.")
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Pubblicare ${chosen.size} canali?")
+            .setMessage("La nuova configurazione diventerà disponibile ai Player autorizzati al loro prossimo avvio. La lista attualmente salvata sui Player resterà disponibile in caso di errore.")
+            .setNegativeButton("Annulla", null)
+            .setPositiveButton("Pubblica") { _, _ ->
+                val payload = JSONArray()
+                chosen.forEachIndexed { index, channel ->
+                    payload.put(
+                        JSONObject()
+                            .put("id", "channel-$index")
+                            .put("name", channel.name)
+                            .put("url", channel.url)
+                            .put("logo", channel.logo)
+                    )
+                }
+                runCloudAdminTask(
+                    task = { CloudSyncAdmin.publish(this, payload) },
+                    onSuccess = { result ->
+                        status.text = "Pubblicazione completata · versione ${result.optInt("version")} · ${result.optInt("channelCount")} canali."
+                        toast(status.text.toString())
+                    }
+                )
+            }
+            .show()
+    }
+
+    private fun approveCloudPlayer() {
+        val codeInput = EditText(this).apply {
+            hint = "Codice a 6 cifre mostrato dal Player"
+            setSingleLine(true)
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+            filters = arrayOf(android.text.InputFilter.LengthFilter(6))
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Autorizza un nuovo Player")
+            .setMessage("Inserisci il codice temporaneo visualizzato sul dispositivo da autorizzare.")
+            .setView(codeInput)
+            .setNegativeButton("Annulla", null)
+            .setPositiveButton("Autorizza") { _, _ ->
+                val code = codeInput.text.toString().trim()
+                if (!code.matches(Regex("\\d{6}"))) {
+                    toast("Il codice deve contenere 6 cifre.")
+                    return@setPositiveButton
+                }
+                runCloudAdminTask(
+                    task = { CloudSyncAdmin.approve(this, code) },
+                    onSuccess = { result ->
+                        status.text = "Player autorizzato: ${result.optString("deviceName")}."
+                        toast(status.text.toString())
+                    }
+                )
+            }
+            .show()
+    }
+
+    private fun showCloudDevices() {
+        status.text = "Caricamento dispositivi autorizzati…"
+        Thread {
+            try {
+                val devices = CloudSyncAdmin.devices(this)
+                runOnUiThread {
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    if (devices.length() == 0) {
+                        toast("Nessun dispositivo registrato.")
+                        return@runOnUiThread
+                    }
+                    val labels = Array(devices.length()) { index ->
+                        val item = devices.getJSONObject(index)
+                        "${item.optString("deviceName")} · ${item.optString("platform")} · ${item.optString("status")}"
+                    }
+                    AlertDialog.Builder(this)
+                        .setTitle("Dispositivi Sky Player")
+                        .setItems(labels) { _, index ->
+                            val item = devices.getJSONObject(index)
+                            if (item.optString("status") != "approved") {
+                                toast("Questo dispositivo non è attualmente autorizzato.")
+                            } else {
+                                AlertDialog.Builder(this)
+                                    .setTitle("Revocare l'accesso?")
+                                    .setMessage("Il dispositivo ${item.optString("deviceName")} non potrà più scaricare la configurazione.")
+                                    .setNegativeButton("Annulla", null)
+                                    .setPositiveButton("Revoca") { _, _ ->
+                                        runCloudAdminTask(
+                                            task = { CloudSyncAdmin.revoke(this, item.optString("deviceId")) },
+                                            onSuccess = {
+                                                toast("Autorizzazione revocata.")
+                                                showCloudDevices()
+                                            }
+                                        )
+                                    }
+                                    .show()
+                            }
+                        }
+                        .setNegativeButton("Chiudi", null)
+                        .show()
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    if (!isFinishing && !isDestroyed) toast(e.message ?: "Impossibile caricare i dispositivi.")
+                }
+            }
+        }.start()
     }
 
     private fun section(text: String) {
