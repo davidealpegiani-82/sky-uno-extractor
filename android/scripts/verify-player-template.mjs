@@ -49,3 +49,11 @@ assert.match(lite, /if \(isFullscreen\) toggleFullscreen\(\)/, 'Back must exit f
 assert.match(web, /android\/app\/src\/main\/assets\/player-template\.html/, 'web exporter must use the same template');
 assert.match(web, /async function playerHtml\(/);
 console.log('Player template checks passed.');
+
+const extractor = readFileSync('android/app/src/main/java/it/davidealpegiani/skyunoextractor/MainActivity.kt', 'utf8');
+assert.match(extractor, /private fun savePlaylistCopy\(/, 'imported source playlists must be saved locally');
+assert.match(extractor, /java\.io\.File\(filesDir, "saved_playlists"\)/, 'saved playlists must survive app restarts in private storage');
+assert.match(extractor, /private fun renderSavedPlaylists\(/, 'saved playlist library must be visible');
+assert.match(extractor, /private fun loadSavedPlaylist\(/, 'saved playlists must be reloadable');
+assert.match(extractor, /private fun confirmClearSavedPlaylists\(/, 'saved playlist library must have a clear action');
+assert.match(extractor, /Svuota archivio e lista canali/, 'clear action must be visible in the UI');
