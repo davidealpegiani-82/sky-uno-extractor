@@ -54,3 +54,10 @@ jobs:
         run: |
           test -n "$SKY_ADMIN_KEY" || { echo "Missing SKY_ADMIN_KEY repository secret"; exit 1; }
           printf '%s' "$SKY_ADMIN_KEY" | npx wrangler secret put SKY_ADMIN_KEY
+      - name: Verify Worker and D1 health
+        env:
+          SKY_CLOUD_SYNC_URL: https://sky-cloud-sync.davide-alpegiani.workers.dev
+        run: |
+          response="$(curl --fail --silent --show-error --retry 5 --retry-delay 2 "$SKY_CLOUD_SYNC_URL/health")"
+          echo "$response"
+          node -e 'const data = JSON.parse(process.argv[1]); if (!data.ok || !data.database?.ok || !data.database?.schemaReady) { console.error("Worker/D1 health check failed"); process.exit(1); } console.log("Worker online; D1 connection and schema verified.");' "$response"
