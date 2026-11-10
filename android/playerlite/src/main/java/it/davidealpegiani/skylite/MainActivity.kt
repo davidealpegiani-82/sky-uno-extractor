@@ -9,6 +9,7 @@ import android.os.Looper
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.widget.FrameLayout
 import android.view.WindowManager
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -33,6 +34,8 @@ class MainActivity : Activity() {
     private lateinit var titleView: TextView
     private lateinit var statusView: TextView
     private lateinit var diagnosticsView: TextView
+    private lateinit var fullscreenButton: TextView
+    private var isFullscreen = false
     private val retryHandler = Handler(Looper.getMainLooper())
     private val diagnosticsTask = object : Runnable {
         override fun run() {
@@ -90,8 +93,8 @@ class MainActivity : Activity() {
             setShowBuffering(PlayerView.SHOW_BUFFERING_ALWAYS)
             keepScreenOn = true
             setBackgroundColor(Color.BLACK)
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
+            layoutParams = FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
             )
         }
         root.addView(titleView)
@@ -103,8 +106,65 @@ class MainActivity : Activity() {
             setPadding(20, 0, 20, 8)
         }
         root.addView(diagnosticsView)
-        root.addView(playerView)
+        val playerContainer = FrameLayout(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
+            )
+            setBackgroundColor(Color.BLACK)
+        }
+        playerContainer.addView(playerView)
+        fullscreenButton = TextView(this).apply {
+            text = "⛶"
+            contentDescription = "Attiva schermo intero"
+            textSize = 28f
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            setBackgroundColor(Color.argb(190, 8, 13, 22))
+            setPadding(14, 6, 14, 10)
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { toggleFullscreen() }
+            layoutParams = FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                Gravity.END or Gravity.TOP
+            ).apply { setMargins(0, 16, 16, 0) }
+        }
+        playerContainer.addView(fullscreenButton)
+        root.addView(playerContainer)
         setContentView(root)
+    }
+
+    private fun toggleFullscreen() {
+        isFullscreen = !isFullscreen
+        val decor = window.decorView
+        if (isFullscreen) {
+            titleView.visibility = View.GONE
+            statusView.visibility = View.GONE
+            diagnosticsView.visibility = View.GONE
+            decor.systemUiVisibility = (
+                View.SYSTEM_UI_FLAG_FULLSCREEN or
+                    View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+                    View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
+                    View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
+                    View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+                    View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                )
+            fullscreenButton.text = "✕"
+            fullscreenButton.contentDescription = "Esci da schermo intero"
+        } else {
+            decor.systemUiVisibility = View.SYSTEM_UI_FLAG_VISIBLE
+            titleView.visibility = View.VISIBLE
+            statusView.visibility = View.VISIBLE
+            diagnosticsView.visibility = View.VISIBLE
+            fullscreenButton.text = "⛶"
+            fullscreenButton.contentDescription = "Attiva schermo intero"
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    override fun onBackPressed() {
+        if (isFullscreen) toggleFullscreen() else super.onBackPressed()
     }
 
     private fun initializePlayer() {
