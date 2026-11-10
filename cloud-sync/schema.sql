@@ -27,3 +27,12 @@ CREATE TABLE IF NOT EXISTS config (
   checksum TEXT NOT NULL,
   published_at INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS pair_attempts (
+  attempt_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  ip_hash TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_pair_attempts_ip_time
+  ON pair_attempts(ip_hash, created_at);
