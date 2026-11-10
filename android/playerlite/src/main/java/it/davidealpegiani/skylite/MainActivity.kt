@@ -127,30 +127,48 @@ class MainActivity : Activity() {
         }
         root.addView(diagnosticsView)
 
+        val cloudHeader = TextView(this).apply {
+            text = "☁  SINCRONIZZAZIONE CLOUD"
+            setTextColor(Color.rgb(112, 196, 220))
+            textSize = 13f
+            setTypeface(null, android.graphics.Typeface.BOLD)
+            setPadding(16, 12, 16, 4)
+        }
+        root.addView(cloudHeader)
+
         endpointInput = EditText(this).apply {
             hint = "Indirizzo Sky Cloud Sync (HTTPS)"
             setSingleLine(true)
             textSize = 13f
             setText(PlayerCloudSync.baseUrl(this@MainActivity))
             setPadding(16, 4, 16, 4)
+            setTextColor(Color.WHITE)
+            setHintTextColor(Color.rgb(164, 181, 202))
         }
         root.addView(endpointInput, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, 48
-        ).apply { setMargins(12, 4, 12, 4) })
+        ).apply { setMargins(12, 4, 12, 6) })
         pairButton = Button(this).apply {
-            text = "Collega questo Player"
+            text = "COLLEGA QUESTO PLAYER"
             isAllCaps = false
             isFocusable = true
+            textSize = 15f
+            setTypeface(null, android.graphics.Typeface.BOLD)
+            setTextColor(Color.rgb(8, 13, 22))
+            setBackgroundTintList(android.content.res.ColorStateList.valueOf(Color.rgb(255, 204, 64)))
+            elevation = 6f
+            minimumHeight = 54
+            setPadding(18, 8, 18, 8)
             setOnClickListener { beginCloudPairing() }
         }
         root.addView(pairButton, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, 48
-        ).apply { setMargins(12, 0, 12, 4) })
+            ViewGroup.LayoutParams.MATCH_PARENT, 56
+        ).apply { setMargins(12, 0, 12, 8) })
         cloudStatusView = TextView(this).apply {
-            text = "Sky Cloud Sync: non ancora associato."
-            setTextColor(Color.rgb(112, 196, 220))
-            textSize = 11f
-            setPadding(16, 2, 16, 6)
+            text = "Player non ancora associato. Premi il pulsante per generare un codice e autorizzarlo da Sky Extractor."
+            setTextColor(Color.rgb(164, 202, 220))
+            textSize = 12f
+            setPadding(16, 4, 16, 10)
         }
         root.addView(cloudStatusView)
 
