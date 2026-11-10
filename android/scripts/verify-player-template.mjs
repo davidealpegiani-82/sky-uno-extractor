@@ -8,7 +8,7 @@ const web = readFileSync('index.html', 'utf8');
 const syntaxTemplate = template
   .replace('__CHANNELS__', '[]')
   .replace('__CLOUD_SYNC_URL__', JSON.stringify('https://sky-cloud-sync.example.workers.dev'));
-const inlineScripts = [...syntaxTemplate.matchAll(/<script\\b[^>]*>([\\s\\S]*?)<\\/script>/gi)]
+const inlineScripts = [...syntaxTemplate.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)]
   .map(match => match[1])
   .filter(source => source.trim());
 assert.ok(inlineScripts.length, 'HTML Player must contain an inline player script');
