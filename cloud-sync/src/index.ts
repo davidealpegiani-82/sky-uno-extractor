@@ -102,7 +102,41 @@ async function route(request: Request, env: Env): Promise<Response> {
   const path = url.pathname.replace(/\/+$/, "") || "/";
 
   if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors(request) });
-  if (request.method === "GET" && path === "/health") return response({ ok: true, service: "sky-cloud-sync", apiVersion: 1 });
+  if (request.method === "GET" && path === "/health") {
+    try {
+      const probe = await env.DB.prepare("SELECT 1 AS ok").first<{ ok: number }>();
+      const tableResult = await env.DB.prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('devices', 'config', 'pair_attempts') ORDER BY name"
+      ).all<{ name: string }>();
+      const found = new Set((tableResult.results || []).map((row) => row.name));
+      const required = ["config", "devices", "pair_attempts"];
+      const missingTables = required.filter((name) => !found.has(name));
+      const databaseOk = probe?.ok === 1;
+      const schemaReady = missingTables.length === 0;
+      if (!databaseOk || !schemaReady) {
+        return response({
+          ok: false,
+          service: "sky-cloud-sync",
+          apiVersion: 1,
+          database: { ok: databaseOk, schemaReady, missingTables },
+        }, 503);
+      }
+      return response({
+        ok: true,
+        service: "sky-cloud-sync",
+        apiVersion: 1,
+        database: { ok: true, schemaReady: true },
+      });
+    } catch (error) {
+      console.error("Sky Cloud Sync health check failed:", error instanceof Error ? error.message : "unknown");
+      return response({
+        ok: false,
+        service: "sky-cloud-sync",
+        apiVersion: 1,
+        database: { ok: false, schemaReady: false },
+      }, 503);
+    }
+  }
 
   if (request.method === "POST" && path === "/v1/pair/start") {
     let body: any;
