@@ -76,5 +76,9 @@ I campi opzionali non disponibili vanno omessi. Gli URL sono conservati come met
 - I codici di associazione scadono dopo 10 minuti e non sono credenziali permanenti.
 - La chiave amministratore è un Cloudflare secret e non deve mai essere distribuita ai Player.
 - I dati di configurazione sono conservati nel database D1: non caricare liste che non si è autorizzati a condividere.
-- Le quote gratuite Cloudflare possono cambiare. Il progetto non abilita billing o upgrade automatici; in caso di quota esaurita la sincronizzazione può fermarsi, mentre ogni Player conserva l'ultima lista valida.
+- Prima del deploy verificare che l'account Cloudflare utilizzi il piano Workers Free e non abbia un piano Workers Paid attivo. Il progetto non configura billing né upgrade automatici; le quote gratuite possono cambiare e, se esaurite, la sincronizzazione può fermarsi mentre ogni Player conserva l'ultima lista valida.
 - Prima di distribuire la funzione a utenti reali vanno aggiunti test end-to-end, rate limiting anti-abuso e verifica del flusso di revoca su dispositivi reali.
+
+## Comportamento dell'HTML esportato
+
+L'endpoint Cloud Sync viene incorporato nel file HTML al momento dell'esportazione. Se si cambia l'endpoint del servizio nell'Extractor, esportare nuovamente l'HTML per incorporare il nuovo indirizzo. Dopo il pairing, il browser salva localmente il token individuale e l'ultima configurazione; la persistenza dipende dalle politiche di storage del browser che apre il file.
