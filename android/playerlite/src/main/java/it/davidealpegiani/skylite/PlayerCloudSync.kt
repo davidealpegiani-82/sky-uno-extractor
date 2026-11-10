@@ -28,7 +28,7 @@ internal object PlayerCloudSync {
 
     fun baseUrl(context: Context): String =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .getString(BASE_URL, "").orEmpty().trim().trimEnd('/')
+            .getString(BASE_URL, "https://sky-cloud-sync.davide-alpegiani.workers.dev").orEmpty().trim().trimEnd('/')
 
     fun saveBaseUrl(context: Context, value: String) {
         val normalized = value.trim().trimEnd('/')
