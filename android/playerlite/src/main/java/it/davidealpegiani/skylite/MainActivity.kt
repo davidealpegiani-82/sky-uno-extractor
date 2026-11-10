@@ -210,13 +210,13 @@ class MainActivity : Activity() {
             isFillViewport = true
             isFocusable = false
             layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, 150
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(220)
             )
             setBackgroundColor(Color.rgb(8, 13, 22))
         }
         channelsList = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(10, 6, 10, 10)
+            setPadding(dp(12), dp(8), dp(12), dp(12))
         }
         channelScroll.addView(channelsList)
         root.addView(channelScroll)
@@ -250,25 +250,39 @@ class MainActivity : Activity() {
             val empty = TextView(this).apply {
                 text = "Nessuna lista cloud disponibile. Associa il Player oppure importa un canale da Sky Player HTML."
                 setTextColor(Color.rgb(164, 181, 202))
-                textSize = 12f
-                setPadding(12, 12, 12, 12)
+                textSize = 14f
+                includeFontPadding = true
+                setPadding(dp(16), dp(16), dp(16), dp(16))
             }
             channelsList.addView(empty)
             return
         }
         cloudChannels.forEach { channel ->
-            val item = Button(this).apply {
+            val item = TextView(this).apply {
                 text = "▶  ${channel.name}"
-                isAllCaps = false
                 isFocusable = true
-                textSize = 13f
+                isClickable = true
+                isSingleLine = false
+                maxLines = 2
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                gravity = Gravity.CENTER_VERTICAL
+                textSize = 15f
+                includeFontPadding = true
+                setLineSpacing(dp(2).toFloat(), 1.0f)
                 setTextColor(Color.WHITE)
-                setBackgroundTintList(android.content.res.ColorStateList.valueOf(Color.rgb(28, 45, 66)))
+                setPadding(dp(16), dp(12), dp(16), dp(12))
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    setColor(Color.rgb(28, 45, 66))
+                    cornerRadius = dp(10).toFloat()
+                }
                 setOnClickListener { playCloudChannel(channel) }
             }
             channelsList.addView(item, LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, 46
-            ).apply { bottomMargin = 5 })
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply {
+                height = ViewGroup.LayoutParams.WRAP_CONTENT
+                bottomMargin = dp(8)
+            })
         }
     }
 
