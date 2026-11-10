@@ -2,6 +2,11 @@ name: Deploy Sky Cloud Sync
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "cloud-sync/**"
+      - ".github/workflows/deploy-cloud-sync.yml"
 
 permissions:
   contents: read
