@@ -1052,8 +1052,8 @@ class MainActivity : FragmentActivity() {
         val template = assets.open("player-template.html")
             .bufferedReader(StandardCharsets.UTF_8)
             .use { it.readText() }
-        check(template.contains("__CHANNELS__")) {
-            "Modello Sky Player non valido: segnaposto canali mancante."
+        check(template.contains("__CHANNELS__") && template.contains("__CLOUD_SYNC_URL__")) {
+            "Modello Sky Player non valido: segnaposto canali o Cloud Sync mancante."
         }
         return template
             .replace("__CHANNELS__", data)
