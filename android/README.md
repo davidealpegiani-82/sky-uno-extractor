@@ -51,3 +51,26 @@ Le configurazioni delle revisioni precedenti sono state confrontate separando il
 - **Recupero:** niente seek durante il normale buffering; il riallineamento al live avviene solo per perdita esplicita della finestra HLS. Retry progressivi e invalidazione dei retry al cambio canale.
 
 La build 1.1.3 incorpora anche il player HTML con video fisso in alto e lista canali a scorrimento verticale. Le soglie sono obiettivi del client, non garanzie: manifest, segmenti, rete e server della sorgente restano determinanti.
+
+
+## Sky Cloud Sync — prima integrazione
+
+La branch `feature/sky-cloud-sync-foundation` introduce l'integrazione applicativa con il backend Cloudflare Worker + D1:
+
+- **Extractor Android:** configurazione endpoint HTTPS e chiave amministratore; pubblicazione dei canali selezionati; approvazione dei codici di pairing; elenco e revoca dei dispositivi.
+- **Credenziale amministratore:** cifrata localmente con AES-GCM e chiave generata da Android Keystore.
+- **Player Lite:** pairing individuale, credenziale dispositivo cifrata con Android Keystore, controllo della versione all'avvio, download solo quando la versione cambia e cache locale dell'ultima configurazione valida.
+- **Android TV / Fire TV:** Player Lite dichiara il supporto opzionale Leanback e non richiede touchscreen; la navigazione dei canali usa controlli focusabili.
+- **Player HTML esportato:** riceve l'endpoint Cloud Sync configurato nell'Extractor, consente il pairing e controlla la versione all'apertura. La lista sincronizzata viene conservata nel local storage del browser; se la sincronizzazione fallisce resta disponibile la lista salvata o incorporata.
+
+### Attivazione necessaria prima dell'uso
+
+Il backend non è ancora pubblicato. Prima di utilizzare la sincronizzazione occorre creare il database D1, configurare il secret `SKY_ADMIN_KEY` e fare il deploy del Worker seguendo `../cloud-sync/README.md`. Poi inserire l'URL `https://...workers.dev` e la chiave amministratore in Extractor.
+
+### Limiti di sicurezza da conoscere
+
+- La chiave amministratore e i token nativi sono cifrati localmente con Android Keystore; l'HTML usa invece il local storage del browser, la cui protezione dipende dal browser e dal dispositivo.
+- Il Worker conserva attualmente la configurazione JSON in D1: gli URL dei flussi e gli eventuali parametri/token contenuti negli URL non sono ancora protetti con cifratura end-to-end. Il controllo di accesso impedisce ai Player non autorizzati di scaricare la lista, ma il provider cloud elabora e conserva il contenuto.
+- Prima di inserire configurazioni con credenziali streaming particolarmente sensibili, va completata una fase di cifratura end-to-end della configurazione.
+- La sincronizzazione trasferisce esclusivamente metadati/configurazione. Ogni Player si collega direttamente alla sorgente HLS e gestisce il proprio buffer Media3 o HLS.js.
+- Le quote gratuite del provider sono soggette a limiti e possono cambiare. Non configurare billing o upgrade automatici; in caso di quota esaurita, il Player deve continuare a usare la cache locale.
