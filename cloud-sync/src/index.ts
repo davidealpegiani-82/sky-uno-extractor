@@ -117,8 +117,22 @@ async function route(request: Request, env: Env): Promise<Response> {
       return response({ error: "invalid_pairing_request" }, 400);
     }
 
+    // Limita l'abuso dell'associazione: massimo 10 richieste per IP in un'ora.
+    const clientIp = request.headers.get("CF-Connecting-IP") || "unknown";
+    const ipHash = await sha256(clientIp);
+    const since = Date.now() - 60 * 60 * 1000;
+    const attempts = await env.DB.prepare(
+      "SELECT COUNT(*) AS total FROM pair_attempts WHERE ip_hash = ? AND created_at > ?"
+    ).bind(ipHash, since).first<{ total: number }>();
+    if ((attempts?.total || 0) >= 10) return response({ error: "pairing_rate_limited" }, 429);
+    await env.DB.prepare("INSERT INTO pair_attempts (ip_hash, created_at) VALUES (?, ?)").bind(ipHash, Date.now()).run();
+
     const pairingId = crypto.randomUUID();
     const tokenHash = await sha256(secret);
+    // Una nuova associazione dalla stessa installazione invalida l'eventuale richiesta precedente.
+    await env.DB.prepare(
+      "UPDATE devices SET status = 'expired', pairing_code = NULL WHERE install_id = ? AND status = 'pending'"
+    ).bind(installId).run();
     let code = "";
     for (let attempt = 0; attempt < 8; attempt++) {
       const random = new Uint32Array(1);
