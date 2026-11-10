@@ -1,6 +1,7 @@
 package it.davidealpegiani.skylite
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
@@ -10,6 +11,10 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
+import android.widget.Button
+import android.widget.EditText
+import android.widget.ScrollView
+import android.widget.Toast
 import android.view.WindowManager
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -26,6 +31,10 @@ import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.hls.HlsMediaSource
 import androidx.media3.ui.PlayerView
+import org.json.JSONArray
+import org.json.JSONObject
+
+private data class CloudChannel(val name: String, val url: String, val logo: String = "")
 
 @UnstableApi
 class MainActivity : Activity() {
@@ -57,13 +66,23 @@ class MainActivity : Activity() {
     }
     private var retryCount = 0
     private var retryTask: Runnable? = null
+    private lateinit var endpointInput: EditText
+    private lateinit var pairButton: Button
+    private lateinit var cloudStatusView: TextView
+    private lateinit var channelsList: LinearLayout
+    private val cloudHandler = Handler(Looper.getMainLooper())
+    private val cloudExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
+    private val cloudChannels = mutableListOf<CloudChannel>()
+    private var pairingPollId: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         buildScreen()
+        loadCachedChannels()
         initializePlayer()
         handlePlayIntent(intent)
+        syncCloudAtStartup()
     }
 
     private fun buildScreen() {
@@ -107,6 +126,34 @@ class MainActivity : Activity() {
             setPadding(20, 0, 20, 8)
         }
         root.addView(diagnosticsView)
+
+        endpointInput = EditText(this).apply {
+            hint = "Indirizzo Sky Cloud Sync (HTTPS)"
+            setSingleLine(true)
+            textSize = 13f
+            setText(PlayerCloudSync.baseUrl(this@MainActivity))
+            setPadding(16, 4, 16, 4)
+        }
+        root.addView(endpointInput, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, 48
+        ).apply { setMargins(12, 4, 12, 4) })
+        pairButton = Button(this).apply {
+            text = "Collega questo Player"
+            isAllCaps = false
+            isFocusable = true
+            setOnClickListener { beginCloudPairing() }
+        }
+        root.addView(pairButton, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, 48
+        ).apply { setMargins(12, 0, 12, 4) })
+        cloudStatusView = TextView(this).apply {
+            text = "Sky Cloud Sync: non ancora associato."
+            setTextColor(Color.rgb(112, 196, 220))
+            textSize = 11f
+            setPadding(16, 2, 16, 6)
+        }
+        root.addView(cloudStatusView)
+
         val playerContainer = FrameLayout(this).apply {
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
@@ -133,7 +180,201 @@ class MainActivity : Activity() {
         }
         playerContainer.addView(fullscreenButton)
         root.addView(playerContainer)
+        val channelScroll = ScrollView(this).apply {
+            isFillViewport = true
+            isFocusable = false
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 150
+            )
+            setBackgroundColor(Color.rgb(8, 13, 22))
+        }
+        channelsList = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(10, 6, 10, 10)
+        }
+        channelScroll.addView(channelsList)
+        root.addView(channelScroll)
         setContentView(root)
+        if (PlayerCloudSync.hasToken(this)) {
+            endpointInput.visibility = View.GONE
+            pairButton.visibility = View.GONE
+            cloudStatusView.text = "Sky Cloud Sync: Player associato · controllo aggiornamenti all'avvio."
+        }
+    }
+
+    private fun loadCachedChannels() {
+        cloudChannels.clear()
+        val config = PlayerCloudSync.cachedConfig(this)
+        val array = config?.optJSONArray("channels") ?: JSONArray()
+        for (i in 0 until array.length()) {
+            val item = array.optJSONObject(i) ?: continue
+            val name = item.optString("name").trim()
+            val url = item.optString("url").trim()
+            if (name.isNotBlank() && (url.startsWith("http://", true) || url.startsWith("https://", true))) {
+                cloudChannels.add(CloudChannel(name, url, item.optString("logo")))
+            }
+        }
+        renderCloudChannels()
+    }
+
+    private fun renderCloudChannels() {
+        if (!::channelsList.isInitialized) return
+        channelsList.removeAllViews()
+        if (cloudChannels.isEmpty()) {
+            val empty = TextView(this).apply {
+                text = "Nessuna lista cloud disponibile. Associa il Player oppure importa un canale da Sky Player HTML."
+                setTextColor(Color.rgb(164, 181, 202))
+                textSize = 12f
+                setPadding(12, 12, 12, 12)
+            }
+            channelsList.addView(empty)
+            return
+        }
+        cloudChannels.forEach { channel ->
+            val item = Button(this).apply {
+                text = "▶  ${channel.name}"
+                isAllCaps = false
+                isFocusable = true
+                textSize = 13f
+                setTextColor(Color.WHITE)
+                setBackgroundTintList(android.content.res.ColorStateList.valueOf(Color.rgb(28, 45, 66)))
+                setOnClickListener { playCloudChannel(channel) }
+            }
+            channelsList.addView(item, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 46
+            ).apply { bottomMargin = 5 })
+        }
+    }
+
+    private fun beginCloudPairing() {
+        try {
+            PlayerCloudSync.saveBaseUrl(this, endpointInput.text.toString())
+        } catch (e: Exception) {
+            Toast.makeText(this, e.message ?: "Indirizzo non valido.", Toast.LENGTH_LONG).show()
+            return
+        }
+        cloudStatusView.text = "Richiesta di associazione…"
+        pairButton.isEnabled = false
+        cloudExecutor.execute {
+            try {
+                val result = PlayerCloudSync.startPairing(this)
+                val id = result.getString("pairingId")
+                val code = result.getString("code")
+                runOnUiThread {
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    pairingPollId = id
+                    cloudStatusView.text = "Codice di autorizzazione: $code · Inseriscilo in Sky Extractor. Valido 10 minuti."
+                    pairButton.text = "In attesa di autorizzazione…"
+                    schedulePairingPoll(id)
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    pairButton.isEnabled = true
+                    cloudStatusView.text = e.message ?: "Impossibile avviare l'associazione."
+                }
+            }
+        }
+    }
+
+    private fun schedulePairingPoll(pairingId: String) {
+        cloudHandler.removeCallbacksAndMessages(null)
+        cloudHandler.postDelayed({
+            cloudExecutor.execute {
+                val state = runCatching { PlayerCloudSync.pairingStatus(this, pairingId) }
+                    .getOrElse { "error" }
+                runOnUiThread {
+                    if (isFinishing || isDestroyed || pairingPollId != pairingId) return@runOnUiThread
+                    when (state) {
+                        "approved" -> {
+                            pairingPollId = null
+                            endpointInput.visibility = View.GONE
+                            pairButton.visibility = View.GONE
+                            cloudStatusView.text = "Player autorizzato. Scaricamento della configurazione…"
+                            syncCloudAtStartup()
+                        }
+                        "pending" -> schedulePairingPoll(pairingId)
+                        "expired" -> {
+                            pairingPollId = null
+                            pairButton.isEnabled = true
+                            pairButton.text = "Riprova associazione"
+                            cloudStatusView.text = "Codice scaduto. Avvia una nuova associazione."
+                        }
+                        else -> {
+                            pairButton.isEnabled = true
+                            pairButton.text = "Riprova associazione"
+                            cloudStatusView.text = "Controllo associazione non riuscito. Verifica la connessione."
+                        }
+                    }
+                }
+            }
+        }, 3000L)
+    }
+
+    private fun syncCloudAtStartup() {
+        if (!PlayerCloudSync.hasToken(this)) {
+            cloudStatusView.text = "Sky Cloud Sync: associa questo Player per ricevere la lista da remoto."
+            return
+        }
+        cloudStatusView.text = "Controllo aggiornamenti Sky Cloud Sync…"
+        cloudExecutor.execute {
+            try {
+                val result = PlayerCloudSync.sync(this)
+                runOnUiThread {
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    loadCachedChannels()
+                    cloudStatusView.text = if (result.optBoolean("unchanged", false)) {
+                        "Lista già aggiornata · versione ${result.optInt("version")} · ${cloudChannels.size} canali."
+                    } else {
+                        "Lista aggiornata · versione ${result.optInt("version")} · ${result.optInt("channelCount")} canali."
+                    }
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    cloudStatusView.text = "Sincronizzazione non riuscita: ${e.message ?: "offline"}. Mantengo la lista salvata."
+                    if (e.message?.contains("device_not_authorized") == true) {
+                        endpointInput.visibility = View.VISIBLE
+                        pairButton.visibility = View.VISIBLE
+                        pairButton.isEnabled = true
+                        pairButton.text = "Richiedi nuova autorizzazione"
+                    }
+                    loadCachedChannels()
+                }
+            }
+        }
+    }
+
+    private fun playCloudChannel(channel: CloudChannel) {
+        val parsed = runCatching { Uri.parse(channel.url) }.getOrNull()
+        if (parsed == null || parsed.scheme !in listOf("http", "https")) {
+            statusView.text = "Indirizzo del flusso non valido."
+            return
+        }
+        titleView.text = channel.name
+        statusView.text = "Connessione al flusso…"
+        val item = MediaItem.Builder()
+            .setUri(parsed)
+            .setMimeType(MimeTypes.APPLICATION_M3U8)
+            .setLiveConfiguration(
+                MediaItem.LiveConfiguration.Builder()
+                    .setTargetOffsetMs(45_000)
+                    .setMinOffsetMs(30_000)
+                    .setMaxOffsetMs(90_000)
+                    .setMinPlaybackSpeed(0.97f)
+                    .setMaxPlaybackSpeed(1.03f)
+                    .build()
+            )
+            .build()
+        retryTask?.let { retryHandler.removeCallbacks(it) }
+        retryCount = 0
+        player?.apply {
+            stop()
+            clearMediaItems()
+            setMediaItem(item)
+            prepare()
+            playWhenReady = true
+        }
     }
 
     private fun toggleFullscreen() {
@@ -319,6 +560,8 @@ class MainActivity : Activity() {
         retryHandler.removeCallbacks(diagnosticsTask)
         retryTask?.let { retryHandler.removeCallbacks(it) }
         retryHandler.removeCallbacksAndMessages(null)
+        cloudHandler.removeCallbacksAndMessages(null)
+        cloudExecutor.shutdownNow()
         playerView.player = null
         player?.release()
         player = null
