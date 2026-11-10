@@ -121,6 +121,7 @@ async function route(request: Request, env: Env): Promise<Response> {
     const clientIp = request.headers.get("CF-Connecting-IP") || "unknown";
     const ipHash = await sha256(clientIp);
     const since = Date.now() - 60 * 60 * 1000;
+    await env.DB.prepare("DELETE FROM pair_attempts WHERE created_at < ?").bind(Date.now() - 24 * 60 * 60 * 1000).run();
     const attempts = await env.DB.prepare(
       "SELECT COUNT(*) AS total FROM pair_attempts WHERE ip_hash = ? AND created_at > ?"
     ).bind(ipHash, since).first<{ total: number }>();
@@ -194,14 +195,19 @@ async function route(request: Request, env: Env): Promise<Response> {
     ).first<{ version: number; update_id: string; payload: string; checksum: string; published_at: number }>();
     await env.DB.prepare("UPDATE devices SET last_seen_at = ? WHERE device_id = ?").bind(Date.now(), device.id).run();
     if (!row) return response({ error: "no_configuration_published" }, 404);
-    return response({
+    const sinceVersion = Number(url.searchParams.get("sinceVersion") || "0");
+    const metadata = {
       schemaVersion: 1,
       version: row.version,
       updateId: row.update_id,
       checksum: row.checksum,
       publishedAt: row.published_at,
-      config: JSON.parse(row.payload),
-    });
+    };
+    // Il Player controlla ad ogni avvio, ma scarica la lista solo se la versione è cambiata.
+    if (Number.isSafeInteger(sinceVersion) && sinceVersion >= row.version) {
+      return response({ ...metadata, unchanged: true });
+    }
+    return response({ ...metadata, unchanged: false, config: JSON.parse(row.payload) });
   }
 
   if (request.method === "POST" && path === "/v1/admin/config/publish") {
