@@ -4,7 +4,11 @@ Backend leggero per sincronizzare la sola configurazione dei canali tra Sky Extr
 
 ## Stato
 
-Questa è la base del servizio (API + schema D1). Non è ancora pubblicata su Cloudflare e non è ancora collegata alle interfacce Android/HTML. Il deploy richiede un account Cloudflare e una configurazione iniziale eseguita dal proprietario.
+Il backend Sky Cloud Sync è pubblicato su Cloudflare Workers e collegato al database D1 `sky-cloud-sync`. Il Worker espone le API v1 per pairing, approvazione, pubblicazione della configurazione, sincronizzazione e revoca dei dispositivi. Il controllo `GET /health` verifica anche la connessione D1 e la presenza delle tre tabelle richieste (`devices`, `config`, `pair_attempts`).
+
+Endpoint di produzione: `https://sky-cloud-sync.davide-alpegiani.workers.dev`.
+
+L'integrazione client è presente nel progetto Android: Extractor, Player Lite e HTML esportato. Prima del primo utilizzo reale, il proprietario deve inserire nell'Extractor la chiave amministratore configurata come secret `SKY_ADMIN_KEY` su GitHub/Cloudflare e autorizzare ogni Player tramite il codice temporaneo.
 
 ## Requisiti
 
