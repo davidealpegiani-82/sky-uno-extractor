@@ -1,9 +1,18 @@
 import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
+import { Script } from 'node:vm';
 const template = readFileSync('android/app/src/main/assets/player-template.html', 'utf8');
 const kotlin = readFileSync('android/app/src/main/java/it/davidealpegiani/skyunoextractor/MainActivity.kt', 'utf8');
 const lite = readFileSync('android/playerlite/src/main/java/it/davidealpegiani/skylite/MainActivity.kt', 'utf8');
 const web = readFileSync('index.html', 'utf8');
+const syntaxTemplate = template
+  .replace('__CHANNELS__', '[]')
+  .replace('__CLOUD_SYNC_URL__', JSON.stringify('https://sky-cloud-sync.example.workers.dev'));
+const inlineScripts = [...syntaxTemplate.matchAll(/<script\\b[^>]*>([\\s\\S]*?)<\\/script>/gi)]
+  .map(match => match[1])
+  .filter(source => source.trim());
+assert.ok(inlineScripts.length, 'HTML Player must contain an inline player script');
+new Script(inlineScripts.at(-1), { filename: 'sky-player-template.js' });
 assert.equal((template.match(/__CHANNELS__/g) || []).length, 1, 'template must contain exactly one channel placeholder');
 assert.equal((template.match(/__CLOUD_SYNC_URL__/g) || []).length, 1, 'template must contain exactly one Cloud Sync endpoint placeholder');
 assert.match(template, /function syncCloudConfig\(\)/, 'HTML Player must check the published configuration on startup');
