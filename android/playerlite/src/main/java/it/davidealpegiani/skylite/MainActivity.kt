@@ -16,6 +16,7 @@ import android.widget.TextView
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultHttpDataSource
@@ -273,6 +274,7 @@ class MainActivity : Activity() {
         statusView.text = "Connessione al flusso…"
         val mediaItem = MediaItem.Builder()
             .setUri(parsed)
+            .setMimeType(MimeTypes.APPLICATION_M3U8)
             .setLiveConfiguration(
                 MediaItem.LiveConfiguration.Builder()
                     .setTargetOffsetMs(45_000)
@@ -283,20 +285,14 @@ class MainActivity : Activity() {
                     .build()
             )
             .build()
-        val source = HlsMediaSource.Factory(
-            DefaultHttpDataSource.Factory()
-                .setUserAgent("SkyPlayerLite/1.0 (Android)")
-                .setConnectTimeoutMs(15_000)
-                .setReadTimeoutMs(45_000)
-                .setAllowCrossProtocolRedirects(true)
-        ).setLoadErrorHandlingPolicy(DefaultLoadErrorHandlingPolicy(6)).createMediaSource(mediaItem)
-
+        // Usa la stessa MediaSourceFactory HLS configurata in initializePlayer().
+        // Il MIME esplicito evita ambiguità con flussi HLS senza estensione .m3u8.
         retryTask?.let { retryHandler.removeCallbacks(it) }
         retryCount = 0
         player?.apply {
             stop()
             clearMediaItems()
-            setMediaSource(source)
+            setMediaItem(mediaItem)
             prepare()
             playWhenReady = true
         }
