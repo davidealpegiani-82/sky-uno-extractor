@@ -5,6 +5,7 @@ on:
     paths:
       - "cloud-sync/**"
       - ".github/workflows/cloud-sync-check.yml"
+      - ".github/workflows/deploy-cloud-sync.yml"
   push:
     branches: [main]
     paths:
