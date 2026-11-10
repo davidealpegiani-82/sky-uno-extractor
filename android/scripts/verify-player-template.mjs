@@ -5,6 +5,10 @@ const kotlin = readFileSync('android/app/src/main/java/it/davidealpegiani/skyuno
 const lite = readFileSync('android/playerlite/src/main/java/it/davidealpegiani/skylite/MainActivity.kt', 'utf8');
 const web = readFileSync('index.html', 'utf8');
 assert.equal((template.match(/__CHANNELS__/g) || []).length, 1, 'template must contain exactly one channel placeholder');
+assert.equal((template.match(/__CLOUD_SYNC_URL__/g) || []).length, 1, 'template must contain exactly one Cloud Sync endpoint placeholder');
+assert.match(template, /function syncCloudConfig\(\)/, 'HTML Player must check the published configuration on startup');
+assert.match(template, /function pairCloudPlayer\(\)/, 'HTML Player must support individual device pairing');
+assert.match(template, /sinceVersion=/, 'HTML Player must avoid downloading an unchanged configuration');
 assert.match(template, /hls\.js@1\.7\.4\/dist\/hls\.min\.js/, 'HLS.js must be pinned');
 assert.match(template, /liveSyncDurationCount:8/);
 assert.match(template, /liveMaxLatencyDurationCount:24/);
@@ -46,6 +50,9 @@ assert.match(lite, /private fun toggleFullscreen\(\)/, 'Player Lite must expose 
 assert.match(lite, /playerContainer\.addView\(fullscreenButton\)/, 'Player Lite fullscreen control must be layered over the video');
 assert.match(lite, /SYSTEM_UI_FLAG_IMMERSIVE_STICKY/, 'Player Lite fullscreen must hide system bars');
 assert.match(lite, /if \(isFullscreen\) toggleFullscreen\(\)/, 'Back must exit fullscreen before closing the player');
+assert.match(lite, /syncCloudAtStartup\(\)/, 'Player Lite must sync at app startup');
+assert.match(lite, /PlayerCloudSync\.pairingStatus/, 'Player Lite must support device pairing');
+assert.match(lite, /LEANBACK_LAUNCHER/, 'Player Lite must be discoverable by Android TV launchers');
 assert.match(web, /android\/app\/src\/main\/assets\/player-template\.html/, 'web exporter must use the same template');
 assert.match(web, /async function playerHtml\(/);
 console.log('Player template checks passed.');
