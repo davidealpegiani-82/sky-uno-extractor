@@ -79,6 +79,7 @@ class MainActivity : Activity() {
     private lateinit var channelsList: LinearLayout
     private lateinit var channelScroll: ScrollView
     private lateinit var playerContainer: FrameLayout
+    private lateinit var controlsPanel: LinearLayout
     private lateinit var cloudHeaderView: TextView
     private val cloudHandler = Handler(Looper.getMainLooper())
     private val cloudExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
@@ -99,28 +100,44 @@ class MainActivity : Activity() {
         (value * resources.displayMetrics.density + 0.5f).toInt()
 
     private fun buildScreen() {
+        val tvMode = isTvDevice()
         val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
+            orientation = if (tvMode) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
             setBackgroundColor(Color.rgb(8, 13, 22))
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
             )
+            descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
+        }
+        val controls = if (tvMode) LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), dp(12), dp(12), dp(12))
+            setBackgroundColor(Color.rgb(12, 20, 32))
+            descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
+        } else root
+        controlsPanel = controls
+        if (tvMode) {
+            root.addView(controls, LinearLayout.LayoutParams(dp(340), ViewGroup.LayoutParams.MATCH_PARENT))
         }
         titleView = TextView(this).apply {
             text = "SKY PLAYER LITE"
             setTextColor(Color.WHITE)
-            textSize = 18f
+            textSize = if (tvMode) 23f else 18f
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(20, 18, 20, 8)
+            setPadding(dp(12), dp(18), dp(12), dp(10))
         }
         statusView = TextView(this).apply {
             text = "Apri un canale da Sky Player HTML."
             setTextColor(Color.rgb(164, 181, 202))
-            textSize = 13f
-            setPadding(20, 0, 20, 12)
+            textSize = if (tvMode) 15f else 13f
+            setPadding(dp(12), 0, dp(12), dp(12))
         }
         playerView = PlayerView(this).apply {
+            isFocusable = tvMode
+            isFocusableInTouchMode = !tvMode
+            setOnFocusChangeListener { _, focused -> if (focused) showController() }
+            setOnClickListener { showController() }
             useController = true
             controllerAutoShow = true
             setShowBuffering(PlayerView.SHOW_BUFFERING_ALWAYS)
@@ -130,15 +147,15 @@ class MainActivity : Activity() {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
             )
         }
-        root.addView(titleView)
-        root.addView(statusView)
+        controls.addView(titleView)
+        controls.addView(statusView)
         diagnosticsView = TextView(this).apply {
             text = "HLS: in attesa · buffer 0s"
             setTextColor(Color.rgb(112, 196, 220))
-            textSize = 11f
-            setPadding(20, 0, 20, 8)
+            textSize = if (tvMode) 12f else 11f
+            setPadding(dp(12), 0, dp(12), dp(8))
         }
-        root.addView(diagnosticsView)
+        controls.addView(diagnosticsView)
 
         cloudHeaderView = TextView(this).apply {
             text = "☁  SINCRONIZZAZIONE CLOUD"
@@ -147,7 +164,7 @@ class MainActivity : Activity() {
             setTypeface(null, android.graphics.Typeface.BOLD)
             setPadding(16, 12, 16, 4)
         }
-        root.addView(cloudHeaderView)
+        controls.addView(cloudHeaderView)
 
         endpointInput = EditText(this).apply {
             hint = "Indirizzo Sky Cloud Sync (HTTPS)"
@@ -158,7 +175,7 @@ class MainActivity : Activity() {
             setTextColor(Color.WHITE)
             setHintTextColor(Color.rgb(164, 181, 202))
         }
-        root.addView(endpointInput, LinearLayout.LayoutParams(
+        controls.addView(endpointInput, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, 48
         ).apply { setMargins(12, 4, 12, 6) })
         pairButton = Button(this).apply {
@@ -179,7 +196,7 @@ class MainActivity : Activity() {
             setLineSpacing(dp(2).toFloat(), 1.0f)
             setOnClickListener { beginCloudPairing() }
         }
-        root.addView(pairButton, LinearLayout.LayoutParams(
+        controls.addView(pairButton, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, dp(68)
         ).apply { setMargins(dp(12), dp(2), dp(12), dp(10)) })
         cloudStatusView = TextView(this).apply {
@@ -188,12 +205,14 @@ class MainActivity : Activity() {
             textSize = 12f
             setPadding(16, 4, 16, 10)
         }
-        root.addView(cloudStatusView)
+        controls.addView(cloudStatusView)
 
         playerContainer = FrameLayout(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
-            )
+            layoutParams = if (tvMode) {
+                LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f)
+            } else {
+                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f)
+            }
             setBackgroundColor(Color.BLACK)
         }
         playerContainer.addView(playerView)
@@ -219,9 +238,11 @@ class MainActivity : Activity() {
         channelScroll = ScrollView(this).apply {
             isFillViewport = true
             isFocusable = false
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(220)
-            )
+            layoutParams = if (tvMode) {
+                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f)
+            } else {
+                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(220))
+            }
             setBackgroundColor(Color.rgb(8, 13, 22))
         }
         channelsList = LinearLayout(this).apply {
@@ -229,14 +250,19 @@ class MainActivity : Activity() {
             setPadding(dp(12), dp(8), dp(12), dp(12))
         }
         channelScroll.addView(channelsList)
-        root.addView(channelScroll)
+        if (tvMode) controls.addView(channelScroll) else root.addView(channelScroll)
         setContentView(root)
         if (PlayerCloudSync.hasToken(this)) {
             endpointInput.visibility = View.GONE
             pairButton.visibility = View.GONE
             cloudStatusView.text = "Sky Cloud Sync: Player associato · controllo aggiornamenti all'avvio."
         }
+        if (tvMode && cloudChannels.isEmpty()) pairButton.requestFocus()
     }
+
+    private fun isTvDevice(): Boolean =
+        packageManager.hasSystemFeature("android.software.leanback") ||
+            packageManager.hasSystemFeature("android.hardware.type.television")
 
     private fun loadCachedChannels() {
         cloudChannels.clear()
@@ -257,10 +283,11 @@ class MainActivity : Activity() {
         if (!::channelsList.isInitialized) return
         channelsList.removeAllViews()
         if (cloudChannels.isEmpty()) {
+            if (isTvDevice()) pairButton.post { pairButton.requestFocus() }
             val empty = TextView(this).apply {
                 text = "Nessuna lista cloud disponibile. Associa il Player oppure importa un canale da Sky Player HTML."
                 setTextColor(Color.rgb(164, 181, 202))
-                textSize = 14f
+                textSize = if (isTvDevice()) 16f else 14f
                 includeFontPadding = true
                 setPadding(dp(16), dp(16), dp(16), dp(16))
             }
@@ -276,15 +303,15 @@ class MainActivity : Activity() {
                 maxLines = 2
                 ellipsize = android.text.TextUtils.TruncateAt.END
                 gravity = Gravity.CENTER_VERTICAL
-                textSize = 15f
+                textSize = if (isTvDevice()) 18f else 15f
                 includeFontPadding = true
                 setLineSpacing(dp(2).toFloat(), 1.0f)
                 setTextColor(Color.WHITE)
-                setPadding(dp(16), dp(12), dp(16), dp(12))
-                background = android.graphics.drawable.GradientDrawable().apply {
-                    setColor(Color.rgb(28, 45, 66))
-                    cornerRadius = dp(10).toFloat()
-                }
+                setPadding(dp(18), if (isTvDevice()) dp(18) else dp(12), dp(18), if (isTvDevice()) dp(18) else dp(12))
+                isFocusable = true
+                isFocusableInTouchMode = !isTvDevice()
+                background = channelFocusBackground(false)
+                setOnFocusChangeListener { _, focused -> background = channelFocusBackground(focused) }
                 setOnClickListener { playCloudChannel(channel) }
             }
             channelsList.addView(item, LinearLayout.LayoutParams(
@@ -294,7 +321,17 @@ class MainActivity : Activity() {
                 bottomMargin = dp(8)
             })
         }
+        if (isTvDevice()) {
+            channelsList.post { channelsList.getChildAt(0)?.requestFocus() }
+        }
     }
+
+    private fun channelFocusBackground(focused: Boolean): android.graphics.drawable.GradientDrawable =
+        android.graphics.drawable.GradientDrawable().apply {
+            setColor(if (focused) Color.rgb(42, 65, 91) else Color.rgb(28, 45, 66))
+            cornerRadius = dp(10).toFloat()
+            if (focused) setStroke(dp(3), Color.rgb(255, 204, 64))
+        }
 
     private fun beginCloudPairing() {
         try {
@@ -425,6 +462,7 @@ class MainActivity : Activity() {
             prepare()
             playWhenReady = true
         }
+        if (isTvDevice()) playerView.post { playerView.requestFocus() }
     }
 
     private fun toggleFullscreen() {
@@ -434,6 +472,7 @@ class MainActivity : Activity() {
         if (isFullscreen) {
             // Nasconde tutta l'interfaccia attorno al video e assegna al player
             // l'intera superficie disponibile della finestra.
+            if (isTvDevice()) controlsPanel.visibility = View.GONE
             titleView.visibility = View.GONE
             statusView.visibility = View.GONE
             diagnosticsView.visibility = View.GONE
@@ -442,6 +481,7 @@ class MainActivity : Activity() {
             cloudStatusView.visibility = View.GONE
             channelScroll.visibility = View.GONE
             cloudHeaderView.visibility = View.GONE
+            if (isTvDevice()) playerParams.width = ViewGroup.LayoutParams.MATCH_PARENT
             playerParams.height = ViewGroup.LayoutParams.MATCH_PARENT
             playerParams.weight = 0f
             playerContainer.layoutParams = playerParams
@@ -457,6 +497,7 @@ class MainActivity : Activity() {
             fullscreenButton.contentDescription = "Esci da schermo intero"
         } else {
             decor.systemUiVisibility = View.SYSTEM_UI_FLAG_VISIBLE
+            if (isTvDevice()) controlsPanel.visibility = View.VISIBLE
             titleView.visibility = View.VISIBLE
             statusView.visibility = View.VISIBLE
             diagnosticsView.visibility = View.VISIBLE
@@ -468,7 +509,8 @@ class MainActivity : Activity() {
             cloudStatusView.visibility = View.VISIBLE
             channelScroll.visibility = View.VISIBLE
             cloudHeaderView.visibility = View.VISIBLE
-            playerParams.height = 0
+            if (isTvDevice()) playerParams.width = 0
+            playerParams.height = if (isTvDevice()) ViewGroup.LayoutParams.MATCH_PARENT else 0
             playerParams.weight = 1f
             playerContainer.layoutParams = playerParams
             fullscreenButton.text = "⛶"
