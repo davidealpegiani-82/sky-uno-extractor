@@ -79,6 +79,7 @@ class MainActivity : Activity() {
     private lateinit var channelsList: LinearLayout
     private lateinit var channelScroll: ScrollView
     private lateinit var playerContainer: FrameLayout
+    private lateinit var controlsPanel: LinearLayout
     private lateinit var cloudHeaderView: TextView
     private val cloudHandler = Handler(Looper.getMainLooper())
     private val cloudExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
@@ -115,6 +116,7 @@ class MainActivity : Activity() {
             setBackgroundColor(Color.rgb(12, 20, 32))
             descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
         } else root
+        controlsPanel = controls
         if (tvMode) {
             root.addView(controls, LinearLayout.LayoutParams(dp(340), ViewGroup.LayoutParams.MATCH_PARENT))
         }
@@ -132,6 +134,10 @@ class MainActivity : Activity() {
             setPadding(dp(12), 0, dp(12), dp(12))
         }
         playerView = PlayerView(this).apply {
+            isFocusable = tvMode
+            isFocusableInTouchMode = !tvMode
+            setOnFocusChangeListener { _, focused -> if (focused) showController() }
+            setOnClickListener { showController() }
             useController = true
             controllerAutoShow = true
             setShowBuffering(PlayerView.SHOW_BUFFERING_ALWAYS)
@@ -277,6 +283,7 @@ class MainActivity : Activity() {
         if (!::channelsList.isInitialized) return
         channelsList.removeAllViews()
         if (cloudChannels.isEmpty()) {
+            if (isTvDevice()) pairButton.post { pairButton.requestFocus() }
             val empty = TextView(this).apply {
                 text = "Nessuna lista cloud disponibile. Associa il Player oppure importa un canale da Sky Player HTML."
                 setTextColor(Color.rgb(164, 181, 202))
@@ -455,6 +462,7 @@ class MainActivity : Activity() {
             prepare()
             playWhenReady = true
         }
+        if (isTvDevice()) playerView.post { playerView.requestFocus() }
     }
 
     private fun toggleFullscreen() {
@@ -464,6 +472,7 @@ class MainActivity : Activity() {
         if (isFullscreen) {
             // Nasconde tutta l'interfaccia attorno al video e assegna al player
             // l'intera superficie disponibile della finestra.
+            if (isTvDevice()) controlsPanel.visibility = View.GONE
             titleView.visibility = View.GONE
             statusView.visibility = View.GONE
             diagnosticsView.visibility = View.GONE
@@ -472,6 +481,7 @@ class MainActivity : Activity() {
             cloudStatusView.visibility = View.GONE
             channelScroll.visibility = View.GONE
             cloudHeaderView.visibility = View.GONE
+            if (isTvDevice()) playerParams.width = ViewGroup.LayoutParams.MATCH_PARENT
             playerParams.height = ViewGroup.LayoutParams.MATCH_PARENT
             playerParams.weight = 0f
             playerContainer.layoutParams = playerParams
@@ -487,6 +497,7 @@ class MainActivity : Activity() {
             fullscreenButton.contentDescription = "Esci da schermo intero"
         } else {
             decor.systemUiVisibility = View.SYSTEM_UI_FLAG_VISIBLE
+            if (isTvDevice()) controlsPanel.visibility = View.VISIBLE
             titleView.visibility = View.VISIBLE
             statusView.visibility = View.VISIBLE
             diagnosticsView.visibility = View.VISIBLE
@@ -498,7 +509,8 @@ class MainActivity : Activity() {
             cloudStatusView.visibility = View.VISIBLE
             channelScroll.visibility = View.VISIBLE
             cloudHeaderView.visibility = View.VISIBLE
-            playerParams.height = 0
+            if (isTvDevice()) playerParams.width = 0
+            playerParams.height = if (isTvDevice()) ViewGroup.LayoutParams.MATCH_PARENT else 0
             playerParams.weight = 1f
             playerContainer.layoutParams = playerParams
             fullscreenButton.text = "⛶"
