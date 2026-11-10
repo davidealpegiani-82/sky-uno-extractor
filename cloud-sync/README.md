@@ -43,7 +43,7 @@ Non inserire mai la chiave amministratore nel repository, nell'HTML pubblico o i
 - `GET /v1/pair/status?pairingId=...`: verifica approvazione.
 - `POST /v1/admin/pair/approve`: approva codice (header `X-Sky-Admin-Key`).
 - `POST /v1/admin/config/publish`: pubblica la lista (header admin).
-- `GET /v1/config`: scarica la configurazione (header `Authorization: Bearer <device-secret>`).
+- `GET /v1/config?sinceVersion=<versione-locale>`: controlla la versione; se è già aggiornata restituisce soltanto metadati, altrimenti scarica la configurazione (header `Authorization: Bearer <device-secret>`).
 - `GET /v1/admin/devices`: elenco dispositivi (header admin).
 - `POST /v1/admin/devices/revoke`: revoca dispositivo (header admin).
 
