@@ -72,7 +72,7 @@ internal object CloudSyncAdmin {
 
     fun baseUrl(context: Context): String =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .getString(BASE_URL, "").orEmpty().trim().trimEnd('/')
+            .getString(BASE_URL, "https://sky-cloud-sync.davide-alpegiani.workers.dev").orEmpty().trim().trimEnd('/')
 
     fun saveSettings(context: Context, baseUrl: String, adminKey: String?) {
         val normalized = baseUrl.trim().trimEnd('/')
