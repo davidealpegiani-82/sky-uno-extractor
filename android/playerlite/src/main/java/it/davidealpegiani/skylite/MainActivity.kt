@@ -333,6 +333,12 @@ class MainActivity : Activity() {
                 runOnUiThread {
                     if (isFinishing || isDestroyed) return@runOnUiThread
                     cloudStatusView.text = "Sincronizzazione non riuscita: ${e.message ?: "offline"}. Mantengo la lista salvata."
+                    if (e.message?.contains("device_not_authorized") == true) {
+                        endpointInput.visibility = View.VISIBLE
+                        pairButton.visibility = View.VISIBLE
+                        pairButton.isEnabled = true
+                        pairButton.text = "Richiedi nuova autorizzazione"
+                    }
                     loadCachedChannels()
                 }
             }
