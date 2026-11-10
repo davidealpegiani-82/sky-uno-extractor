@@ -29,6 +29,10 @@ import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultLivePlaybackSpeedControl
 import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.analytics.AnalyticsListener
+import androidx.media3.exoplayer.source.LoadEventInfo
+import androidx.media3.exoplayer.source.MediaLoadData
+import java.io.IOException
 import androidx.media3.exoplayer.hls.HlsMediaSource
 import androidx.media3.ui.PlayerView
 import org.json.JSONArray
@@ -60,10 +64,13 @@ class MainActivity : Activity() {
                 else -> "?"
             }
             diagnosticsView.text = "HLS: $state · buffer ${aheadMs / 1000}s · " +
-                if (current.isLoading) "download attivo" else "download in attesa"
+                (if (current.isLoading) "download attivo" else "download in attesa") +
+                " · $lastHlsLoad"
             retryHandler.postDelayed(this, 1000L)
         }
     }
+    // Ultimo caricamento HLS completato: aiuta a distinguere segmenti lenti da pause normali.
+    @Volatile private var lastHlsLoad = "segmenti: in attesa"
     private var retryCount = 0
     private var retryTask: Runnable? = null
     private lateinit var endpointInput: EditText
@@ -507,6 +514,35 @@ class MainActivity : Activity() {
             .build()
             .also { exo ->
                 playerView.player = exo
+                // Misura tempi e dimensioni dei segmenti senza registrare URL o token.
+                exo.addAnalyticsListener(object : AnalyticsListener {
+                    override fun onLoadCompleted(
+                        eventTime: AnalyticsListener.EventTime,
+                        loadEventInfo: LoadEventInfo,
+                        mediaLoadData: MediaLoadData
+                    ) {
+                        if (mediaLoadData.dataType == C.DATA_TYPE_MEDIA) {
+                            val duration = loadEventInfo.loadDurationMs
+                            val bytes = loadEventInfo.bytesLoaded
+                            lastHlsLoad = "segmento ${duration}ms · ${bytes / 1024}KB"
+                        } else if (mediaLoadData.dataType == C.DATA_TYPE_MANIFEST) {
+                            lastHlsLoad = "playlist aggiornata"
+                        }
+                    }
+
+                    override fun onLoadError(
+                        eventTime: AnalyticsListener.EventTime,
+                        loadEventInfo: LoadEventInfo,
+                        mediaLoadData: MediaLoadData,
+                        error: IOException,
+                        wasCanceled: Boolean
+                    ) {
+                        if (!wasCanceled) {
+                            val kind = if (mediaLoadData.dataType == C.DATA_TYPE_MANIFEST) "playlist" else "segmento"
+                            lastHlsLoad = "errore $kind: ${error.javaClass.simpleName}"
+                        }
+                    }
+                })
                 exo.addListener(object : Player.Listener {
                     override fun onPlaybackStateChanged(playbackState: Int) {
                         statusView.text = when (playbackState) {
