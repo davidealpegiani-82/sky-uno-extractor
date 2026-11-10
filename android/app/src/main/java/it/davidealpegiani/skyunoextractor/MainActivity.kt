@@ -1055,7 +1055,9 @@ class MainActivity : FragmentActivity() {
         check(template.contains("__CHANNELS__")) {
             "Modello Sky Player non valido: segnaposto canali mancante."
         }
-        return template.replace("__CHANNELS__", data)
+        return template
+            .replace("__CHANNELS__", data)
+            .replace("__CLOUD_SYNC_URL__", JSONObject.quote(CloudSyncAdmin.baseUrl(this)))
     }
 
     private fun toggleFullscreen() {
