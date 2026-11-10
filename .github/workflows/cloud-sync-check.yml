@@ -1,0 +1,36 @@
+name: Check Sky Cloud Sync
+
+on:
+  pull_request:
+    paths:
+      - "cloud-sync/**"
+      - ".github/workflows/cloud-sync-check.yml"
+  push:
+    branches: [main]
+    paths:
+      - "cloud-sync/**"
+      - ".github/workflows/cloud-sync-check.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  typecheck:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cloud-sync
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: cloud-sync/package.json
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: TypeScript check
+        run: npm run typecheck
+      - name: Wrangler dry-run build
+        run: npx wrangler deploy --dry-run --outdir=dist
