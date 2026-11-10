@@ -5,4 +5,4 @@ compatibility_date = "2026-11-10"
 [[d1_databases]]
 binding = "DB"
 database_name = "sky-cloud-sync"
-database_id = "00000002-00000000-0000511f-172d0e749ff2fd4cabbccdfc02ee6de9"
+database_id = "00000005-00000000-0000511f-4c4fa962e07e555eef4bbc14674543c4"
