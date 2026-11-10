@@ -85,6 +85,9 @@ class MainActivity : Activity() {
         syncCloudAtStartup()
     }
 
+    private fun dp(value: Int): Int =
+        (value * resources.displayMetrics.density + 0.5f).toInt()
+
     private fun buildScreen() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -152,18 +155,23 @@ class MainActivity : Activity() {
             text = "COLLEGA QUESTO PLAYER"
             isAllCaps = false
             isFocusable = true
-            textSize = 15f
+            isSingleLine = true
+            maxLines = 1
+            includeFontPadding = true
+            gravity = Gravity.CENTER
+            textSize = 14f
             setTypeface(null, android.graphics.Typeface.BOLD)
             setTextColor(Color.rgb(8, 13, 22))
             setBackgroundTintList(android.content.res.ColorStateList.valueOf(Color.rgb(255, 204, 64)))
-            elevation = 6f
-            minimumHeight = 54
-            setPadding(18, 8, 18, 8)
+            elevation = dp(4).toFloat()
+            minHeight = dp(64)
+            setPadding(dp(18), dp(14), dp(18), dp(14))
+            setLineSpacing(dp(2).toFloat(), 1.0f)
             setOnClickListener { beginCloudPairing() }
         }
         root.addView(pairButton, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, 56
-        ).apply { setMargins(12, 0, 12, 8) })
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(68)
+        ).apply { setMargins(dp(12), dp(2), dp(12), dp(10)) })
         cloudStatusView = TextView(this).apply {
             text = "Player non ancora associato. Premi il pulsante per generare un codice e autorizzarlo da Sky Extractor."
             setTextColor(Color.rgb(164, 202, 220))
