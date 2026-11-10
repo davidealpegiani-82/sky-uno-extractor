@@ -74,14 +74,20 @@ internal object CloudSyncAdmin {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .getString(BASE_URL, "").orEmpty().trim().trimEnd('/')
 
-    fun saveSettings(context: Context, baseUrl: String, adminKey: String) {
+    fun saveSettings(context: Context, baseUrl: String, adminKey: String?) {
         val normalized = baseUrl.trim().trimEnd('/')
         require(normalized.startsWith("https://", true)) { "Il servizio Cloud Sync deve usare HTTPS." }
-        require(adminKey.length >= 32) { "La chiave amministratore deve contenere almeno 32 caratteri." }
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putString(BASE_URL, normalized)
             .apply()
-        CloudSyncSecretStore.save(context, adminKey)
+        if (!adminKey.isNullOrBlank()) {
+            require(adminKey.length >= 32) { "La chiave amministratore deve contenere almeno 32 caratteri." }
+            CloudSyncSecretStore.save(context, adminKey)
+        } else {
+            require(!CloudSyncSecretStore.read(context).isNullOrBlank()) {
+                "Inserisci la chiave amministratore al primo salvataggio."
+            }
+        }
     }
 
     fun publish(context: Context, channels: JSONArray): JSONObject {
