@@ -63,9 +63,19 @@ La branch `feature/sky-cloud-sync-foundation` introduce l'integrazione applicati
 - **Android TV / Fire TV:** Player Lite dichiara il supporto opzionale Leanback e non richiede touchscreen; la navigazione dei canali usa controlli focusabili.
 - **Player HTML esportato:** riceve l'endpoint Cloud Sync configurato nell'Extractor, consente il pairing e controlla la versione all'apertura. La lista sincronizzata viene conservata nel local storage del browser; se la sincronizzazione fallisce resta disponibile la lista salvata o incorporata.
 
-### Attivazione necessaria prima dell'uso
+### Attivazione e primo utilizzo
 
-Il backend non è ancora pubblicato. Prima di utilizzare la sincronizzazione occorre creare il database D1, configurare il secret `SKY_ADMIN_KEY` e fare il deploy del Worker seguendo `../cloud-sync/README.md`. Poi inserire l'URL `https://...workers.dev` e la chiave amministratore in Extractor.
+Il backend è pubblicato all'indirizzo `https://sky-cloud-sync.davide-alpegiani.workers.dev` e il database D1 è collegato. L'endpoint è già precompilato nelle nuove build di Extractor e Player Lite.
+
+1. In Sky Extractor aprire **Configura Sky Cloud Sync**.
+2. Verificare l'indirizzo precompilato e inserire la stessa chiave amministratore configurata nel secret Cloudflare `SKY_ADMIN_KEY` (conservarla in un password manager; non inviarla in chat e non inserirla nell'HTML).
+3. Selezionare i canali e scegliere **Pubblica aggiornamento remoto**.
+4. Sul Player Lite o nell'HTML esportato avviare **Collega Player** e comunicare il codice temporaneo a Extractor.
+5. In Extractor scegliere **Autorizza Player** e inserire il codice. Dopo l'approvazione, il Player scarica la lista e conserva una copia locale.
+
+Le build Android aggiornate vengono pubblicate dal workflow **Build Sky Extractor and Player Lite APKs**. Il link stabile di Player Lite è `https://github.com/davidealpegiani-82/sky-uno-extractor/releases/download/player-lite-latest/Sky-Player-Lite.apk`.
+
+Se Cloud Sync non è raggiungibile, Player Lite e HTML mantengono la configurazione locale già salvata.
 
 ### Limiti di sicurezza da conoscere
 
