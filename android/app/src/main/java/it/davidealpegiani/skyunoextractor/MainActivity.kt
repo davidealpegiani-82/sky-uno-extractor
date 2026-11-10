@@ -1,10 +1,12 @@
 package it.davidealpegiani.skyunoextractor
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.graphics.Color
 import android.net.Uri
+import android.provider.OpenableColumns
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -64,6 +66,7 @@ class MainActivity : FragmentActivity() {
     private lateinit var mainContainer: LinearLayout
     private lateinit var root: LinearLayout
     private lateinit var selectedList: LinearLayout
+    private lateinit var savedPlaylistsList: LinearLayout
     private lateinit var otherList: LinearLayout
     private lateinit var selectedHeading: TextView
     private lateinit var otherHeading: TextView
@@ -445,7 +448,14 @@ class MainActivity : FragmentActivity() {
         button("📂  Seleziona file", true) { openPicker() }
         status = label("Nessun file caricato.", MUTED)
 
-        section("2 · CANALI E SELEZIONE")
+        section("2 · PLAYLIST SALVATE")
+        label("Le copie salvate restano sul dispositivo anche dopo la chiusura dell'app, finché non le elimini.", MUTED, 12f)
+        savedPlaylistsList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        root.addView(savedPlaylistsList)
+        button("🗑  Svuota archivio e lista canali", false) { confirmClearSavedPlaylists() }
+        renderSavedPlaylists()
+
+        section("3 · CANALI E SELEZIONE")
         count = label("0 canali importati", CYAN)
         val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         row.addView(buttonView("Seleziona tutti") { channels.forEach { it.selected = true }; renderChannels() }, LinearLayout.LayoutParams(0, dp(46), 1f))
@@ -559,21 +569,132 @@ class MainActivity : FragmentActivity() {
         var invalid = 0
         uris.forEach { uri ->
             try {
-                val text = contentResolver.openInputStream(uri)?.bufferedReader(StandardCharsets.UTF_8)?.use { it.readText() } ?: ""
-                val name = uri.lastPathSegment?.substringAfterLast('/') ?: "playlist"
+                val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: ByteArray(0)
+                val text = String(bytes, StandardCharsets.UTF_8)
+                val displayName = queryDisplayName(uri)
                 val found = parseChannels(text)
-                if (found.isEmpty()) invalid++ else found.forEach { ch ->
-                    if (channels.any { it.name.equals(ch.name, true) && it.url == ch.url }) duplicates++
-                    else {
-                        ch.selected = !(ch.name.contains("sky", true) && (ch.name.contains("plus", true) || ch.name.contains("+1")))
-                        channels.add(ch)
-                        added++
+                if (found.isEmpty()) {
+                    invalid++
+                } else {
+                    savePlaylistCopy(displayName, bytes)
+                    found.forEach { ch ->
+                        if (channels.any { it.name.equals(ch.name, true) && it.url == ch.url }) duplicates++
+                        else {
+                            ch.selected = !(ch.name.contains("sky", true) && (ch.name.contains("plus", true) || ch.name.contains("+1")))
+                            channels.add(ch)
+                            added++
+                        }
                     }
                 }
             } catch (_: Exception) { invalid++ }
         }
         renderChannels()
+        renderSavedPlaylists()
         status.text = "File analizzati: ${uris.size} · Nuovi canali: $added · Duplicati ignorati: $duplicates · File senza canali validi: $invalid"
+    }
+
+    private fun queryDisplayName(uri: Uri): String {
+        return try {
+            contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) cursor.getString(0) else null
+            } ?: uri.lastPathSegment?.substringAfterLast('/') ?: "playlist"
+        } catch (_: Exception) {
+            uri.lastPathSegment?.substringAfterLast('/') ?: "playlist"
+        }
+    }
+
+    private fun savedPlaylistDirectory(): java.io.File =
+        java.io.File(filesDir, "saved_playlists").apply { mkdirs() }
+
+    private fun savePlaylistCopy(originalName: String, bytes: ByteArray) {
+        val safeName = originalName.substringAfterLast('/').replace(Regex("[^A-Za-z0-9._-]"), "_")
+            .ifBlank { "playlist.txt" }.take(80)
+        val target = java.io.File(savedPlaylistDirectory(), "${System.currentTimeMillis()}_$safeName")
+        target.writeBytes(bytes)
+    }
+
+    private fun renderSavedPlaylists() {
+        if (!::savedPlaylistsList.isInitialized) return
+        savedPlaylistsList.removeAllViews()
+        val files = savedPlaylistDirectory().listFiles()?.filter { it.isFile }?.sortedByDescending { it.lastModified() }.orEmpty()
+        if (files.isEmpty()) {
+            val empty = TextView(this).apply {
+                text = "Nessuna playlist salvata."
+                textSize = 12f
+                setTextColor(MUTED)
+                setPadding(0, dp(4), 0, dp(8))
+            }
+            savedPlaylistsList.addView(empty)
+            return
+        }
+        files.forEach { file ->
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(8), dp(4), dp(8), dp(4))
+                setBackgroundColor(PANEL)
+            }
+            val name = TextView(this).apply {
+                text = file.name.substringAfter('_')
+                textSize = 12f
+                setTextColor(Color.WHITE)
+                maxLines = 2
+            }
+            row.addView(name, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            row.addView(buttonView("Carica") { loadSavedPlaylist(file) })
+            savedPlaylistsList.addView(row, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                bottomMargin = dp(5)
+            })
+        }
+    }
+
+    private fun loadSavedPlaylist(file: java.io.File) {
+        try {
+            if (!file.exists()) {
+                toast("La playlist salvata non è più disponibile.")
+                renderSavedPlaylists()
+                return
+            }
+            val found = parseChannels(file.readText(StandardCharsets.UTF_8))
+            if (found.isEmpty()) {
+                toast("Nessun canale valido trovato nel file salvato.")
+                return
+            }
+            var added = 0
+            var duplicates = 0
+            found.forEach { ch ->
+                if (channels.any { it.name.equals(ch.name, true) && it.url == ch.url }) duplicates++
+                else {
+                    ch.selected = !(ch.name.contains("sky", true) && (ch.name.contains("plus", true) || ch.name.contains("+1")))
+                    channels.add(ch)
+                    added++
+                }
+            }
+            renderChannels()
+            status.text = "Playlist caricata: ${file.name.substringAfter('_')} · Nuovi canali: $added · Duplicati ignorati: $duplicates"
+        } catch (e: Exception) {
+            toast("Impossibile caricare la playlist: ${e.message}")
+        }
+    }
+
+    private fun confirmClearSavedPlaylists() {
+        AlertDialog.Builder(this)
+            .setTitle("Svuotare l'archivio?")
+            .setMessage("Verranno eliminate tutte le playlist salvate sul dispositivo e rimossi i canali attualmente caricati. Questa operazione non può essere annullata.")
+            .setNegativeButton("Annulla", null)
+            .setPositiveButton("Svuota") { _, _ ->
+                savedPlaylistDirectory().listFiles()?.forEach { it.delete() }
+                channels.clear()
+                if (::player.isInitialized) {
+                    player.stop()
+                    player.clearMediaItems()
+                }
+                renderChannels()
+                renderSavedPlaylists()
+                status.text = "Archivio svuotato. Puoi caricare una nuova playlist."
+                toast("Archivio e lista canali svuotati.")
+            }
+            .show()
     }
 
     private fun parseChannels(text: String): List<TvChannel> {
