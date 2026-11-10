@@ -4,6 +4,7 @@ import { Script } from 'node:vm';
 const template = readFileSync('android/app/src/main/assets/player-template.html', 'utf8');
 const kotlin = readFileSync('android/app/src/main/java/it/davidealpegiani/skyunoextractor/MainActivity.kt', 'utf8');
 const lite = readFileSync('android/playerlite/src/main/java/it/davidealpegiani/skylite/MainActivity.kt', 'utf8');
+const liteManifest = readFileSync('android/playerlite/src/main/AndroidManifest.xml', 'utf8');
 const web = readFileSync('index.html', 'utf8');
 const syntaxTemplate = template
   .replace('__CHANNELS__', '[]')
@@ -61,7 +62,7 @@ assert.match(lite, /SYSTEM_UI_FLAG_IMMERSIVE_STICKY/, 'Player Lite fullscreen mu
 assert.match(lite, /if \(isFullscreen\) toggleFullscreen\(\)/, 'Back must exit fullscreen before closing the player');
 assert.match(lite, /syncCloudAtStartup\(\)/, 'Player Lite must sync at app startup');
 assert.match(lite, /PlayerCloudSync\.pairingStatus/, 'Player Lite must support device pairing');
-assert.match(lite, /LEANBACK_LAUNCHER/, 'Player Lite must be discoverable by Android TV launchers');
+assert.match(liteManifest, /LEANBACK_LAUNCHER/, 'Player Lite must be discoverable by Android TV launchers');
 assert.match(web, /android\/app\/src\/main\/assets\/player-template\.html/, 'web exporter must use the same template');
 assert.match(web, /async function playerHtml\(/);
 console.log('Player template checks passed.');
