@@ -70,6 +70,9 @@ class MainActivity : Activity() {
     private lateinit var pairButton: Button
     private lateinit var cloudStatusView: TextView
     private lateinit var channelsList: LinearLayout
+    private lateinit var channelScroll: ScrollView
+    private lateinit var playerContainer: FrameLayout
+    private lateinit var cloudHeaderView: TextView
     private val cloudHandler = Handler(Looper.getMainLooper())
     private val cloudExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
     private val cloudChannels = mutableListOf<CloudChannel>()
@@ -130,14 +133,14 @@ class MainActivity : Activity() {
         }
         root.addView(diagnosticsView)
 
-        val cloudHeader = TextView(this).apply {
+        cloudHeaderView = TextView(this).apply {
             text = "☁  SINCRONIZZAZIONE CLOUD"
             setTextColor(Color.rgb(112, 196, 220))
             textSize = 13f
             setTypeface(null, android.graphics.Typeface.BOLD)
             setPadding(16, 12, 16, 4)
         }
-        root.addView(cloudHeader)
+        root.addView(cloudHeaderView)
 
         endpointInput = EditText(this).apply {
             hint = "Indirizzo Sky Cloud Sync (HTTPS)"
@@ -180,7 +183,7 @@ class MainActivity : Activity() {
         }
         root.addView(cloudStatusView)
 
-        val playerContainer = FrameLayout(this).apply {
+        playerContainer = FrameLayout(this).apply {
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
             )
@@ -206,7 +209,7 @@ class MainActivity : Activity() {
         }
         playerContainer.addView(fullscreenButton)
         root.addView(playerContainer)
-        val channelScroll = ScrollView(this).apply {
+        channelScroll = ScrollView(this).apply {
             isFillViewport = true
             isFocusable = false
             layoutParams = LinearLayout.LayoutParams(
@@ -420,10 +423,21 @@ class MainActivity : Activity() {
     private fun toggleFullscreen() {
         isFullscreen = !isFullscreen
         val decor = window.decorView
+        val playerParams = playerContainer.layoutParams as LinearLayout.LayoutParams
         if (isFullscreen) {
+            // Nasconde tutta l'interfaccia attorno al video e assegna al player
+            // l'intera superficie disponibile della finestra.
             titleView.visibility = View.GONE
             statusView.visibility = View.GONE
             diagnosticsView.visibility = View.GONE
+            endpointInput.visibility = View.GONE
+            pairButton.visibility = View.GONE
+            cloudStatusView.visibility = View.GONE
+            channelScroll.visibility = View.GONE
+            cloudHeaderView.visibility = View.GONE
+            playerParams.height = ViewGroup.LayoutParams.MATCH_PARENT
+            playerParams.weight = 0f
+            playerContainer.layoutParams = playerParams
             decor.systemUiVisibility = (
                 View.SYSTEM_UI_FLAG_FULLSCREEN or
                     View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
@@ -439,6 +453,17 @@ class MainActivity : Activity() {
             titleView.visibility = View.VISIBLE
             statusView.visibility = View.VISIBLE
             diagnosticsView.visibility = View.VISIBLE
+            // Ripristina i controlli Cloud solo se il Player non è già associato.
+            if (!PlayerCloudSync.hasToken(this)) {
+                endpointInput.visibility = View.VISIBLE
+                pairButton.visibility = View.VISIBLE
+            }
+            cloudStatusView.visibility = View.VISIBLE
+            channelScroll.visibility = View.VISIBLE
+            cloudHeaderView.visibility = View.VISIBLE
+            playerParams.height = 0
+            playerParams.weight = 1f
+            playerContainer.layoutParams = playerParams
             fullscreenButton.text = "⛶"
             fullscreenButton.contentDescription = "Attiva schermo intero"
         }
