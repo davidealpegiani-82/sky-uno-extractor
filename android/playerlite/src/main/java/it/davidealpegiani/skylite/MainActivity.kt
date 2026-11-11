@@ -49,6 +49,10 @@ class MainActivity : Activity() {
     private lateinit var statusView: TextView
     private lateinit var diagnosticsView: TextView
     private lateinit var fullscreenButton: TextView
+    private lateinit var fullscreenChannelsButton: TextView
+    private lateinit var fullscreenChannelDrawer: LinearLayout
+    private lateinit var fullscreenChannelList: LinearLayout
+    private var isChannelDrawerOpen = false
     private var isFullscreen = false
     private val retryHandler = Handler(Looper.getMainLooper())
     private val diagnosticsTask = object : Runnable {
@@ -234,6 +238,62 @@ class MainActivity : Activity() {
             ).apply { setMargins(0, 16, 16, 0) }
         }
         playerContainer.addView(fullscreenButton)
+
+        fullscreenChannelsButton = TextView(this).apply {
+            text = "☰  CANALI"
+            contentDescription = "Apri elenco canali"
+            textSize = 16f
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            setBackground(channelActionBackground())
+            setPadding(dp(18), dp(12), dp(18), dp(12))
+            isClickable = true
+            isFocusable = true
+            visibility = View.GONE
+            setOnClickListener { toggleFullscreenChannelDrawer() }
+            layoutParams = FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, dp(54), Gravity.START or Gravity.TOP
+            ).apply { setMargins(dp(16), dp(16), 0, 0) }
+        }
+        playerContainer.addView(fullscreenChannelsButton)
+
+        fullscreenChannelDrawer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(Color.rgb(10, 18, 30))
+            elevation = dp(18).toFloat()
+            visibility = View.GONE
+            isFocusable = true
+            descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
+            layoutParams = FrameLayout.LayoutParams(dp(360), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.START)
+        }
+        val drawerHeader = TextView(this).apply {
+            text = "SELEZIONA CANALE     ✕"
+            contentDescription = "Chiudi elenco canali"
+            textSize = 18f
+            setTypeface(null, android.graphics.Typeface.BOLD)
+            setTextColor(Color.WHITE)
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(20), dp(18), dp(16), dp(18))
+            isFocusable = true
+            isClickable = true
+            setBackground(channelActionBackground())
+            setOnFocusChangeListener { _, focused -> background = channelActionBackground(focused) }
+            setOnClickListener { closeFullscreenChannelDrawer() }
+        }
+        fullscreenChannelDrawer.addView(drawerHeader, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(68)))
+        val drawerScroll = ScrollView(this).apply {
+            isFillViewport = true
+            isFocusable = false
+            descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
+        }
+        fullscreenChannelList = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), dp(10), dp(12), dp(20))
+        }
+        drawerScroll.addView(fullscreenChannelList)
+        fullscreenChannelDrawer.addView(drawerScroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+        playerContainer.addView(fullscreenChannelDrawer)
+        renderFullscreenChannelList()
         root.addView(playerContainer)
         channelScroll = ScrollView(this).apply {
             isFillViewport = true
@@ -321,9 +381,71 @@ class MainActivity : Activity() {
                 bottomMargin = dp(8)
             })
         }
+        renderFullscreenChannelList()
         if (isTvDevice()) {
             channelsList.post { channelsList.getChildAt(0)?.requestFocus() }
         }
+    }
+
+    private fun channelActionBackground(focused: Boolean = false): android.graphics.drawable.GradientDrawable =
+        android.graphics.drawable.GradientDrawable().apply {
+            setColor(if (focused) Color.rgb(48, 76, 108) else Color.rgb(28, 45, 66))
+            cornerRadius = dp(10).toFloat()
+            if (focused) setStroke(dp(3), Color.rgb(255, 204, 64))
+        }
+
+    private fun renderFullscreenChannelList() {
+        if (!::fullscreenChannelList.isInitialized) return
+        fullscreenChannelList.removeAllViews()
+        if (cloudChannels.isEmpty()) {
+            fullscreenChannelList.addView(TextView(this).apply {
+                text = "Nessun canale disponibile nell'elenco locale.\n\nPer visualizzare qui la playlist completa, associa il Player a Sky Cloud Sync oppure aggiorna la lista sincronizzata."
+                setTextColor(Color.rgb(210, 220, 232))
+                textSize = 17f
+                setPadding(dp(16), dp(20), dp(16), dp(20))
+            })
+            return
+        }
+        cloudChannels.forEach { channel ->
+            val row = TextView(this).apply {
+                text = "▶  ${channel.name}"
+                textSize = 18f
+                maxLines = 2
+                gravity = Gravity.CENTER_VERTICAL
+                setTextColor(Color.WHITE)
+                setPadding(dp(18), dp(18), dp(18), dp(18))
+                isFocusable = true
+                isClickable = true
+                background = channelActionBackground()
+                setOnFocusChangeListener { _, focused -> background = channelActionBackground(focused) }
+                setOnClickListener {
+                    closeFullscreenChannelDrawer()
+                    playCloudChannel(channel)
+                }
+            }
+            fullscreenChannelList.addView(row, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(8) })
+        }
+    }
+
+    private fun toggleFullscreenChannelDrawer() {
+        if (!isFullscreen) return
+        if (isChannelDrawerOpen) closeFullscreenChannelDrawer() else {
+            renderFullscreenChannelList()
+            isChannelDrawerOpen = true
+            fullscreenChannelDrawer.visibility = View.VISIBLE
+            fullscreenChannelsButton.visibility = View.GONE
+            fullscreenChannelDrawer.post { fullscreenChannelDrawer.getChildAt(0)?.requestFocus() }
+        }
+    }
+
+    private fun closeFullscreenChannelDrawer() {
+        if (!::fullscreenChannelDrawer.isInitialized) return
+        isChannelDrawerOpen = false
+        fullscreenChannelDrawer.visibility = View.GONE
+        fullscreenChannelsButton.visibility = if (isFullscreen) View.VISIBLE else View.GONE
+        if (isFullscreen) fullscreenChannelsButton.requestFocus()
     }
 
     private fun channelFocusBackground(focused: Boolean): android.graphics.drawable.GradientDrawable =
@@ -495,7 +617,13 @@ class MainActivity : Activity() {
                 )
             fullscreenButton.text = "✕"
             fullscreenButton.contentDescription = "Esci da schermo intero"
+            fullscreenChannelsButton.visibility = View.VISIBLE
+            isChannelDrawerOpen = false
+            fullscreenChannelDrawer.visibility = View.GONE
         } else {
+            isChannelDrawerOpen = false
+            fullscreenChannelDrawer.visibility = View.GONE
+            fullscreenChannelsButton.visibility = View.GONE
             decor.systemUiVisibility = View.SYSTEM_UI_FLAG_VISIBLE
             if (isTvDevice()) controlsPanel.visibility = View.VISIBLE
             titleView.visibility = View.VISIBLE
@@ -518,9 +646,35 @@ class MainActivity : Activity() {
         }
     }
 
+    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+        if (event.action == android.view.KeyEvent.ACTION_DOWN && isTvDevice()) {
+            when (event.keyCode) {
+                android.view.KeyEvent.KEYCODE_MENU,
+                android.view.KeyEvent.KEYCODE_GUIDE -> {
+                    if (isFullscreen) {
+                        toggleFullscreenChannelDrawer()
+                        return true
+                    }
+                }
+                android.view.KeyEvent.KEYCODE_BACK -> {
+                    if (isChannelDrawerOpen) {
+                        closeFullscreenChannelDrawer()
+                        return true
+                    }
+                }
+            }
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
     @Suppress("DEPRECATION")
     override fun onBackPressed() {
-        if (isFullscreen) toggleFullscreen() else super.onBackPressed()
+        if (isChannelDrawerOpen) {
+            closeFullscreenChannelDrawer()
+        } else {
+            if (isFullscreen) toggleFullscreen()
+            else super.onBackPressed()
+        }
     }
 
     private fun initializePlayer() {
