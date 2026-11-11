@@ -669,10 +669,11 @@ class MainActivity : Activity() {
 
     @Suppress("DEPRECATION")
     override fun onBackPressed() {
-        when {
-            isChannelDrawerOpen -> closeFullscreenChannelDrawer()
-            isFullscreen -> toggleFullscreen()
-            else -> super.onBackPressed()
+        if (isChannelDrawerOpen) {
+            closeFullscreenChannelDrawer()
+        } else {
+            if (isFullscreen) toggleFullscreen()
+            else super.onBackPressed()
         }
     }
 
