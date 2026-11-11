@@ -36,14 +36,21 @@ const video=document.getElementById('video'),statusEl=document.getElementById('s
 const android=/Android/i.test(navigator.userAgent);
 let hls=null,active=-1,retryTimer=null,networkRetryTimer=null,watchdog=null,retryCount=0,networkRetryCount=0,lastTime=0,lastProgress=Date.now(),recovering=false;
 let startupPending=false,startupSince=0,lastLoadKick=0,lastHlsActivity=0,fragmentLoading=false;
-const START_BUFFER_SECONDS=6,MIN_BUFFER_SECONDS=30,TARGET_BUFFER_SECONDS=90;
+const START_BUFFER_SECONDS=6,MIN_BUFFER_SECONDS=8,TARGET_BUFFER_SECONDS=30;
 const retryDelays=[1000,2000,4000,8000,12000,15000];
 function setStatus(s){statusEl.textContent=s}
 function stopPlayer(){if(retryTimer){clearTimeout(retryTimer);retryTimer=null}if(watchdog){clearInterval(watchdog);watchdog=null}if(hls){try{hls.destroy()}catch(e){}hls=null}video.pause();video.removeAttribute('src');video.load();recovering=false;startupPending=false}
 function bufferedAhead(){const t=video.currentTime||0;try{for(let i=0;i<video.buffered.length;i++){const a=video.buffered.start(i),b=video.buffered.end(i);if(t>=a-.5&&t<=b+.5)return Math.max(0,b-t)}}catch(e){}return 0}
 function updateBuffer(){const s=bufferedAhead();bufferText.textContent=s.toFixed(1)+' s';bufferFill.style.width=Math.min(100,s/TARGET_BUFFER_SECONDS*100)+'%';bufferFill.style.background=s<15?'#f06b4a':s<MIN_BUFFER_SECONDS?'#f0a34a':'linear-gradient(90deg,#19b8df,#39dc9a)';return s}
 function requestPlay(){startupPending=false;video.play().then(()=>{setStatus('In riproduzione: '+(CHANNELS[active]?.name||''))}).catch(()=>setStatus('Buffer pronto. Premi Play per avviare '+(CHANNELS[active]?.name||'')))}
-function keepBufferLoading(){if(!hls||bufferedAhead()>=MIN_BUFFER_SECONDS||fragmentLoading)return;const now=Date.now();if(now-lastHlsActivity<2000||now-lastLoadKick<2000)return;lastLoadKick=now;try{hls.startLoad(-1)}catch(e){}}
+function keepBufferLoading(force=false){
+ if(!hls||active<0||fragmentLoading)return;
+ const now=Date.now(),ahead=bufferedAhead();
+ // Non forzare startLoad tra due segmenti: sui live può riposizionare il loader.
+ if(!force||ahead>1||now-lastHlsActivity<10000||now-lastLoadKick<12000)return;
+ lastLoadKick=now;
+ try{hls.startLoad()}catch(e){}
+}
 function checkBufferPolicy(){
  const ahead=updateBuffer();
  if(startupPending){
@@ -51,12 +58,31 @@ function checkBufferPolicy(){
   if(ahead>=START_BUFFER_SECONDS||(waited>=60&&ahead>=3)){requestPlay();return}
   setStatus('Precaricamento iniziale: '+ahead.toFixed(1)+' / '+START_BUFFER_SECONDS+' s');return;
  }
- if(!video.paused&&!video.ended&&ahead<MIN_BUFFER_SECONDS){keepBufferLoading();if(ahead<15)setStatus('Buffer in recupero: '+ahead.toFixed(1)+' s · caricamento attivo')}
+ if(!video.paused&&!video.ended&&ahead<MIN_BUFFER_SECONDS&&ahead<2)setStatus('Buffer basso: '+ahead.toFixed(1)+' s · attendo nuovi segmenti');
 }
 function beginPrebuffer(){startupPending=true;startupSince=Date.now();if(hls){try{hls.startLoad(-1)}catch(e){}}checkBufferPolicy()}
 function recover(reason){if(retryTimer||active<0)return;if(retryCount>=retryDelays.length){setStatus('Flusso non disponibile dopo i tentativi automatici. Seleziona di nuovo il canale per riprovare.');return}const delay=retryDelays[retryCount++];recovering=true;setStatus(reason+' · ripristino '+retryCount+'/'+retryDelays.length);retryTimer=setTimeout(()=>{retryTimer=null;if(active>=0)startChannel(active,true)},delay)}
-function recoverNetwork(reason){if(active<0||!hls||networkRetryTimer)return;if(networkRetryCount>=retryDelays.length){recover('Connessione non ripristinata');return}const attempt=++networkRetryCount,delay=retryDelays[attempt-1];recovering=true;setStatus(reason+' · recupero connessione '+attempt+'/'+retryDelays.length);networkRetryTimer=setTimeout(()=>{networkRetryTimer=null;if(!hls||active<0)return;try{hls.startLoad(-1)}catch(e){recover('Impossibile riavviare il caricamento HLS')}},delay)}
-function startWatchdog(){if(watchdog)clearInterval(watchdog);lastTime=video.currentTime||0;lastProgress=Date.now();watchdog=setInterval(()=>{if(video.paused||video.ended||active<0)return;const t=video.currentTime||0;if(Math.abs(t-lastTime)>=.2){lastTime=t;lastProgress=Date.now();if(!recovering)retryCount=0}else if(Date.now()-lastProgress>15000)recover('Riproduzione bloccata')},4000)}
+function recoverNetwork(reason){
+ if(active<0||!hls||networkRetryTimer)return;
+ if(networkRetryCount>=retryDelays.length){
+  recovering=false;setStatus('Connessione instabile: caricamento in pausa. Premi Play o cambia canale per riprovare.');return;
+ }
+ const attempt=++networkRetryCount,delay=retryDelays[attempt-1];
+ recovering=true;setStatus(reason+' · recupero connessione '+attempt+'/'+retryDelays.length);
+ networkRetryTimer=setTimeout(()=>{
+  networkRetryTimer=null;if(!hls||active<0)return;
+  try{hls.startLoad()}catch(e){recovering=false;setStatus('Impossibile riprendere il caricamento. Premi Play per riprovare.')}
+ },delay);
+}
+function startWatchdog(){
+ if(watchdog)clearInterval(watchdog);lastTime=video.currentTime||0;lastProgress=Date.now();
+ watchdog=setInterval(()=>{
+  if(video.paused||video.ended||active<0)return;
+  const t=video.currentTime||0,ahead=bufferedAhead(),now=Date.now();
+  if(Math.abs(t-lastTime)>=.2){lastTime=t;lastProgress=now;if(!recovering)retryCount=0;return}
+  if(now-lastProgress>25000&&ahead<1&&!fragmentLoading&&now-lastHlsActivity>10000)recoverNetwork('Flusso fermo e buffer esaurito');
+ },5000)
+}
 function startChannel(i,retry=false){const c=CHANNELS[i];if(!c)return;active=i;if(retryTimer){clearTimeout(retryTimer);retryTimer=null}if(networkRetryTimer){clearTimeout(networkRetryTimer);networkRetryTimer=null}networkRetryCount=0;if(hls){try{hls.destroy()}catch(e){}hls=null}fragmentLoading=false;lastHlsActivity=0;video.pause();video.removeAttribute('src');video.load();startupPending=false;lastLoadKick=0;document.querySelectorAll('.channel').forEach((b,n)=>b.classList.toggle('active',n===i));setStatus((retry?'Ripristino: ':'Caricamento: ')+c.name);
  if(video.canPlayType('application/vnd.apple.mpegurl')&&!(window.Hls&&Hls.isSupported())){video.src=c.url;video.load();beginPrebuffer()}
  else if(window.Hls&&Hls.isSupported()){hls=new Hls({enableWorker:true,lowLatencyMode:false,liveSyncDurationCount:8,liveMaxLatencyDurationCount:24,maxBufferLength:90,maxMaxBufferLength:90,maxBufferSize:90*1000*1000,backBufferLength:30,maxBufferHole:.1,highBufferWatchdogPeriod:2,startFragPrefetch:true,testBandwidth:true,abrEwmaDefaultEstimate:2000000,abrBandWidthFactor:.8,abrBandWidthUpFactor:.7,fragLoadingTimeOut:45000,manifestLoadingTimeOut:30000,manifestLoadingMaxRetry:6,levelLoadingMaxRetry:6,fragLoadingMaxRetry:8,fragLoadingRetryDelay:1000,fragLoadingMaxRetryTimeout:45000,nudgeMaxRetry:6,debug:false});hls.on(Hls.Events.MANIFEST_PARSED,()=>beginPrebuffer());hls.on(Hls.Events.FRAG_LOADING,()=>{fragmentLoading=true;lastHlsActivity=Date.now()});hls.on(Hls.Events.FRAG_LOADED,()=>{fragmentLoading=false;lastHlsActivity=Date.now()});hls.on(Hls.Events.FRAG_BUFFERED,()=>{fragmentLoading=false;lastHlsActivity=Date.now();networkRetryCount=0;recovering=false;checkBufferPolicy()});hls.on(Hls.Events.ERROR,(_,e)=>{if(e){if(e.details===Hls.ErrorDetails.FRAG_LOAD_ERROR||e.details===Hls.ErrorDetails.FRAG_LOAD_TIMEOUT){fragmentLoading=false;lastHlsActivity=Date.now()}if(e.fatal){if(e.type===Hls.ErrorTypes.NETWORK_ERROR){recoverNetwork('Errore di rete')}else if(e.type===Hls.ErrorTypes.MEDIA_ERROR){try{hls.recoverMediaError()}catch(_){recover('Errore del flusso')}}else recover('Errore del flusso')}}});hls.loadSource(c.url);hls.attachMedia(video)}
@@ -70,7 +96,7 @@ fullscreenBtn.addEventListener('click',toggleFullscreen);
 document.addEventListener('fullscreenchange',()=>{fullscreenBtn.textContent=document.fullscreenElement?'⤢ Esci da schermo intero':'⛶ Schermo intero'});
 video.addEventListener('playing',()=>{lastTime=video.currentTime||0;lastProgress=Date.now();if(!startupPending)setStatus('In riproduzione: '+(CHANNELS[active]?.name||''))});
 video.addEventListener('timeupdate',()=>{const t=video.currentTime||0;if(Math.abs(t-lastTime)>=.2){lastTime=t;lastProgress=Date.now()}checkBufferPolicy()});
-video.addEventListener('progress',checkBufferPolicy);video.addEventListener('waiting',()=>{if(!video.paused){setStatus('Buffering: richiesta di nuovi segmenti…');keepBufferLoading()}checkBufferPolicy()});video.addEventListener('error',()=>{if(active>=0)recover('Errore di riproduzione')});
+video.addEventListener('progress',checkBufferPolicy);video.addEventListener('waiting',()=>{if(!video.paused){setStatus('Buffering: attendo il prossimo segmento…');if(bufferedAhead()<1)keepBufferLoading(true)}checkBufferPolicy()});video.addEventListener('error',()=>{if(active>=0)recover('Errore di riproduzione')});
 const list=document.getElementById('list');
 const cloudButton=document.getElementById('cloudPair');
 const cloudStatus=document.getElementById('cloudStatus');
