@@ -79,11 +79,13 @@ assert.match(web, /async function playerHtml\(/);
 console.log('Player template checks passed.');
 
 const extractor = readFileSync('android/app/src/main/java/it/davidealpegiani/skyunoextractor/MainActivity.kt', 'utf8');
+const admin = readFileSync('android/app/src/main/java/it/davidealpegiani/skyunoextractor/CloudSyncAdmin.kt', 'utf8');
 assert.match(extractor, /private fun savePlaylistCopy\(/, 'imported source playlists must be saved locally');
 assert.match(extractor, /java\.io\.File\(filesDir, "saved_playlists"\)/, 'saved playlists must survive app restarts in private storage');
 assert.match(extractor, /private fun renderSavedPlaylists\(/, 'saved playlist library must be visible');
 assert.match(extractor, /private fun loadSavedPlaylist\(/, 'saved playlists must be reloadable');
-assert.match(extractor, /CloudSyncAdmin\.createActivationCode\(this\)/, 'Extractor must generate one-time activation codes');
+assert.match(extractor, /CloudSyncAdmin\.createActivationCode\(this\)/, 'Extractor must request one-time activation codes');
+assert.match(admin, /fun createActivationCode\(context: Context\)/, 'Cloud Sync admin client must expose one-time activation code generation');
 assert.match(extractor, /CloudSyncAdmin\.rename\(this, deviceId, newName\)/, 'Extractor must support custom device names');
 assert.match(extractor, /Dispositivi autorizzati/, 'device manager must show a dedicated authorized devices list');
 assert.match(extractor, /Dispositivi revocati/, 'device manager must show a dedicated revoked devices list');
