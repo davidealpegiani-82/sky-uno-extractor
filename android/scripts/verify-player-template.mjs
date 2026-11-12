@@ -86,6 +86,7 @@ assert.match(extractor, /private fun renderSavedPlaylists\(/, 'saved playlist li
 assert.match(extractor, /private fun loadSavedPlaylist\(/, 'saved playlists must be reloadable');
 assert.match(extractor, /CloudSyncAdmin\.createActivationCode\(this\)/, 'Extractor must request one-time activation codes');
 assert.match(admin, /fun createActivationCode\(context: Context\)/, 'Cloud Sync admin client must expose one-time activation code generation');
+assert.match(admin, /fun rename\(context: Context, deviceId: String, displayName: String\)/, 'Cloud Sync admin client must support device renaming');
 assert.match(extractor, /CloudSyncAdmin\.rename\(this, deviceId, newName\)/, 'Extractor must support custom device names');
 assert.match(extractor, /Dispositivi autorizzati/, 'device manager must show a dedicated authorized devices list');
 assert.match(extractor, /Dispositivi revocati/, 'device manager must show a dedicated revoked devices list');
