@@ -25,6 +25,7 @@ internal object PlayerCloudSync {
     private const val TOKEN = "device_token"
     private const val VERSION = "config_version"
     private const val CONFIG = "config_json"
+    private const val LEASE_EXPIRY = "lease_expires_at"
 
     fun baseUrl(context: Context): String =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -39,6 +40,16 @@ internal object PlayerCloudSync {
 
     fun hasToken(context: Context): Boolean = !readToken(context).isNullOrBlank()
 
+    fun hasValidLease(context: Context): Boolean =
+        hasToken(context) && context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getLong(LEASE_EXPIRY, 0L) > System.currentTimeMillis()
+
+    fun clearAuthorization(context: Context) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .remove(CONFIG).remove(VERSION).remove(LEASE_EXPIRY).apply()
+        context.getSharedPreferences(SECURE_PREFS, Context.MODE_PRIVATE).edit().remove(TOKEN).apply()
+    }
+
     fun currentVersion(context: Context): Int =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getInt(VERSION, 0)
 
@@ -46,34 +57,38 @@ internal object PlayerCloudSync {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .getString(CONFIG, null)?.let { runCatching { JSONObject(it) }.getOrNull() }
 
-    fun startPairing(context: Context): JSONObject {
-        val token = getOrCreateToken(context)
+    fun activate(context: Context, codeValue: String): JSONObject {
+        val code = codeValue.uppercase().filter { it.isLetterOrDigit() }
+        require(code.matches(Regex("[A-HJ-NP-Z2-9]{10}"))) { "Inserisci il codice monouso di 10 caratteri." }
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         var installId = prefs.getString(INSTALL_ID, null)
         if (installId.isNullOrBlank()) {
             installId = java.util.UUID.randomUUID().toString()
             prefs.edit().putString(INSTALL_ID, installId).apply()
         }
+        val token = getOrCreateToken(context)
         val body = JSONObject()
+            .put("code", code)
             .put("deviceSecret", token)
             .put("installId", installId)
-            .put("deviceName", "${Build.MANUFACTURER} ${Build.MODEL}".trim().take(80))
+            .put("deviceName", "${Build.MANUFACTURER} ${Build.MODEL}".trim().take(100))
             .put("platform", "android")
-        return request(context, "POST", "/v1/pair/start", body, authenticated = false)
-    }
-
-    fun pairingStatus(context: Context, pairingId: String): String {
-        val result = request(
-            context, "GET", "/v1/pair/status?pairingId=${java.net.URLEncoder.encode(pairingId, "UTF-8")}",
-            null, authenticated = true
-        )
-        return result.optString("status", "unknown")
+        val result = request(context, "POST", "/v2/activate", body, authenticated = false)
+        val lease = result.optLong("leaseExpiresAt", 0L)
+        require(result.optBoolean("activated") && lease > System.currentTimeMillis()) {
+            "Il server non ha restituito una licenza valida."
+        }
+        prefs.edit().putLong(LEASE_EXPIRY, lease).apply()
+        return result
     }
 
     fun sync(context: Context): JSONObject {
         val version = currentVersion(context)
         val result = request(context, "GET", "/v1/config?sinceVersion=$version", null, authenticated = true)
+        val lease = result.optLong("leaseExpiresAt", 0L)
+        require(lease > System.currentTimeMillis()) { "Licenza offline scaduta. Riconnetti il Player." }
         if (result.optBoolean("unchanged", false)) {
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putLong(LEASE_EXPIRY, lease).apply()
             return JSONObject().put("unchanged", true).put("version", result.optInt("version", version))
         }
         val config = result.optJSONObject("config")
@@ -93,6 +108,7 @@ internal object PlayerCloudSync {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putString(CONFIG, config.toString())
             .putInt(VERSION, result.optInt("version", version))
+            .putLong(LEASE_EXPIRY, lease)
             .apply()
         return JSONObject()
             .put("unchanged", false)
