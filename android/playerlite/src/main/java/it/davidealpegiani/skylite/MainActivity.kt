@@ -79,6 +79,7 @@ class MainActivity : Activity() {
     private var retryCount = 0
     private var retryTask: Runnable? = null
     private lateinit var endpointInput: EditText
+    private lateinit var activationCodeInput: EditText
     private lateinit var pairButton: Button
     private lateinit var cloudStatusView: TextView
     private lateinit var channelsList: LinearLayout
@@ -183,8 +184,21 @@ class MainActivity : Activity() {
         controls.addView(endpointInput, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, 48
         ).apply { setMargins(12, 4, 12, 6) })
+        activationCodeInput = EditText(this).apply {
+            hint = "Codice monouso generato da Sky Extractor"
+            setSingleLine(true)
+            textSize = 16f
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS
+            filters = arrayOf(android.text.InputFilter.LengthFilter(10))
+            setTextColor(Color.WHITE)
+            setHintTextColor(Color.rgb(164, 181, 202))
+            setPadding(dp(16), dp(6), dp(16), dp(6))
+        }
+        controls.addView(activationCodeInput, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(54)
+        ).apply { setMargins(dp(12), dp(4), dp(12), dp(6)) })
         pairButton = Button(this).apply {
-            text = "COLLEGA QUESTO PLAYER"
+            text = "ATTIVA QUESTO DISPOSITIVO"
             isAllCaps = false
             isFocusable = true
             isSingleLine = true
@@ -207,7 +221,7 @@ class MainActivity : Activity() {
             ViewGroup.LayoutParams.MATCH_PARENT, dp(68)
         ).apply { setMargins(dp(12), dp(2), dp(12), dp(10)) })
         cloudStatusView = TextView(this).apply {
-            text = "Player non ancora associato. Premi il pulsante per generare un codice e autorizzarlo da Sky Extractor."
+            text = "Inserisci il codice monouso generato da Sky Extractor per attivare questo dispositivo."
             setTextColor(Color.rgb(164, 202, 220))
             textSize = 12f
             setPadding(16, 4, 16, 10)
@@ -328,10 +342,11 @@ class MainActivity : Activity() {
         channelScroll.addView(channelsList)
         if (tvMode) controls.addView(channelScroll) else root.addView(channelScroll)
         setContentView(root)
-        if (PlayerCloudSync.hasToken(this)) {
+        if (PlayerCloudSync.hasValidLease(this)) {
             endpointInput.visibility = View.GONE
+            activationCodeInput.visibility = View.GONE
             pairButton.visibility = View.GONE
-            cloudStatusView.text = "Sky Cloud Sync: Player associato · controllo aggiornamenti all'avvio."
+            cloudStatusView.text = "Dispositivo autorizzato · licenza offline valida."
         }
         if (tvMode && cloudChannels.isEmpty()) pairButton.requestFocus()
     }
@@ -342,6 +357,10 @@ class MainActivity : Activity() {
 
     private fun loadCachedChannels() {
         cloudChannels.clear()
+        if (!PlayerCloudSync.hasValidLease(this)) {
+            renderCloudChannels()
+            return
+        }
         val config = PlayerCloudSync.cachedConfig(this)
         val array = config?.optJSONArray("channels") ?: JSONArray()
         for (i in 0 until array.length()) {
@@ -488,67 +507,45 @@ class MainActivity : Activity() {
             Toast.makeText(this, e.message ?: "Indirizzo non valido.", Toast.LENGTH_LONG).show()
             return
         }
-        cloudStatusView.text = "Richiesta di associazione…"
+        val code = activationCodeInput.text.toString().trim().uppercase()
+        if (!code.matches(Regex("[A-HJ-NP-Z2-9]{10}"))) {
+            activationCodeInput.error = "Inserisci il codice monouso di 10 caratteri"
+            return
+        }
+        cloudStatusView.text = "Attivazione del dispositivo in corso…"
         pairButton.isEnabled = false
         cloudExecutor.execute {
             try {
-                val result = PlayerCloudSync.startPairing(this)
-                val id = result.getString("pairingId")
-                val code = result.getString("code")
+                PlayerCloudSync.activate(this, code)
                 runOnUiThread {
                     if (isFinishing || isDestroyed) return@runOnUiThread
-                    pairingPollId = id
-                    cloudStatusView.text = "Codice di autorizzazione: $code · Inseriscilo in Sky Extractor. Valido 10 minuti."
-                    pairButton.text = "In attesa di autorizzazione…"
-                    schedulePairingPoll(id)
+                    activationCodeInput.visibility = View.GONE
+                    endpointInput.visibility = View.GONE
+                    pairButton.visibility = View.GONE
+                    cloudStatusView.text = "Dispositivo attivato. Scaricamento configurazione…"
+                    syncCloudAtStartup()
                 }
             } catch (e: Exception) {
                 runOnUiThread {
                     if (isFinishing || isDestroyed) return@runOnUiThread
                     pairButton.isEnabled = true
-                    cloudStatusView.text = e.message ?: "Impossibile avviare l'associazione."
+                    cloudStatusView.text = e.message ?: "Attivazione non riuscita."
                 }
             }
         }
     }
 
-    private fun schedulePairingPoll(pairingId: String) {
-        cloudHandler.removeCallbacksAndMessages(null)
-        cloudHandler.postDelayed({
-            cloudExecutor.execute {
-                val state = runCatching { PlayerCloudSync.pairingStatus(this, pairingId) }
-                    .getOrElse { "error" }
-                runOnUiThread {
-                    if (isFinishing || isDestroyed || pairingPollId != pairingId) return@runOnUiThread
-                    when (state) {
-                        "approved" -> {
-                            pairingPollId = null
-                            endpointInput.visibility = View.GONE
-                            pairButton.visibility = View.GONE
-                            cloudStatusView.text = "Player autorizzato. Scaricamento della configurazione…"
-                            syncCloudAtStartup()
-                        }
-                        "pending" -> schedulePairingPoll(pairingId)
-                        "expired" -> {
-                            pairingPollId = null
-                            pairButton.isEnabled = true
-                            pairButton.text = "Riprova associazione"
-                            cloudStatusView.text = "Codice scaduto. Avvia una nuova associazione."
-                        }
-                        else -> {
-                            pairButton.isEnabled = true
-                            pairButton.text = "Riprova associazione"
-                            cloudStatusView.text = "Controllo associazione non riuscito. Verifica la connessione."
-                        }
-                    }
-                }
-            }
-        }, 3000L)
-    }
-
     private fun syncCloudAtStartup() {
-        if (!PlayerCloudSync.hasToken(this)) {
-            cloudStatusView.text = "Sky Cloud Sync: associa questo Player per ricevere la lista da remoto."
+        if (!PlayerCloudSync.hasValidLease(this)) {
+            cloudChannels.clear()
+            renderCloudChannels()
+            stopPlaybackForAuthorization()
+            endpointInput.visibility = View.VISIBLE
+            activationCodeInput.visibility = View.VISIBLE
+            pairButton.visibility = View.VISIBLE
+            pairButton.isEnabled = true
+            pairButton.text = "ATTIVA QUESTO DISPOSITIVO"
+            cloudStatusView.text = "Accesso bloccato: inserisci un codice monouso generato da Sky Extractor."
             return
         }
         cloudStatusView.text = "Controllo aggiornamenti Sky Cloud Sync…"
@@ -569,18 +566,42 @@ class MainActivity : Activity() {
                     if (isFinishing || isDestroyed) return@runOnUiThread
                     cloudStatusView.text = "Sincronizzazione non riuscita: ${e.message ?: "offline"}. Mantengo la lista salvata."
                     if (e.message?.contains("device_not_authorized") == true) {
+                        PlayerCloudSync.clearAuthorization(this)
+                        cloudChannels.clear()
+                        renderCloudChannels()
+                        stopPlaybackForAuthorization()
                         endpointInput.visibility = View.VISIBLE
+                        activationCodeInput.visibility = View.VISIBLE
                         pairButton.visibility = View.VISIBLE
                         pairButton.isEnabled = true
-                        pairButton.text = "Richiedi nuova autorizzazione"
+                        pairButton.text = "ATTIVA QUESTO DISPOSITIVO"
+                        cloudStatusView.text = "Autorizzazione revocata. Inserisci un nuovo codice."
+                    } else {
+                        loadCachedChannels()
+                        cloudStatusView.text = if (cloudChannels.isEmpty()) {
+                            "Nessuna configurazione disponibile offline."
+                        } else {
+                            "Offline: uso la lista autorizzata fino alla scadenza della licenza."
+                        }
                     }
-                    loadCachedChannels()
                 }
             }
         }
     }
 
+    private fun stopPlaybackForAuthorization() {
+        retryTask?.let { retryHandler.removeCallbacks(it) }
+        player?.apply { stop(); clearMediaItems() }
+        titleView.text = "SKY PLAYER LITE"
+        statusView.text = "Attivazione richiesta"
+    }
+
     private fun playCloudChannel(channel: CloudChannel) {
+        if (!PlayerCloudSync.hasValidLease(this)) {
+            stopPlaybackForAuthorization()
+            cloudStatusView.text = "Accesso bloccato: attiva prima questo dispositivo."
+            return
+        }
         val parsed = runCatching { Uri.parse(channel.url) }.getOrNull()
         if (parsed == null || parsed.scheme !in listOf("http", "https")) {
             statusView.text = "Indirizzo del flusso non valido."
