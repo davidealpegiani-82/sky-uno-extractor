@@ -91,9 +91,10 @@ async function requireDevice(request: Request, env: Env): Promise<{ id: string }
   const token = bearer(request);
   if (!token || token.length < 32 || token.length > 256) return null;
   const tokenHash = await sha256(token);
+  const now = Date.now();
   const row = await env.DB.prepare(
-    "SELECT device_id FROM devices WHERE token_hash = ? AND status = 'approved' LIMIT 1"
-  ).bind(tokenHash).first<{ device_id: string }>();
+    "SELECT device_id FROM devices WHERE token_hash = ? AND status = 'approved' AND lease_expires_at > ? LIMIT 1"
+  ).bind(tokenHash, now).first<{ device_id: string }>();
   return row ? { id: row.device_id } : null;
 }
 
@@ -106,10 +107,10 @@ async function route(request: Request, env: Env): Promise<Response> {
     try {
       const probe = await env.DB.prepare("SELECT 1 AS ok").first<{ ok: number }>();
       const tableResult = await env.DB.prepare(
-        "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('devices', 'config', 'pair_attempts') ORDER BY name"
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('devices', 'config', 'pair_attempts', 'activation_codes') ORDER BY name"
       ).all<{ name: string }>();
       const found = new Set((tableResult.results || []).map((row) => row.name));
-      const required = ["config", "devices", "pair_attempts"];
+      const required = ["config", "devices", "pair_attempts", "activation_codes"];
       const missingTables = required.filter((name) => !found.has(name));
       const databaseOk = probe?.ok === 1;
       const schemaReady = missingTables.length === 0;
@@ -138,20 +139,41 @@ async function route(request: Request, env: Env): Promise<Response> {
     }
   }
 
-  if (request.method === "POST" && path === "/v1/pair/start") {
-    let body: any;
-    try { body = await readJson(request, 16_384); } catch (e) {
-      return response({ error: String(e) === "Error: PAYLOAD_TOO_LARGE" ? "payload_too_large" : "invalid_json" }, 400);
-    }
-    const secret = typeof body.deviceSecret === "string" ? body.deviceSecret : "";
-    const installId = typeof body.installId === "string" ? body.installId.slice(0, 80) : "";
-    const deviceName = typeof body.deviceName === "string" ? body.deviceName.trim().slice(0, 80) : "";
-    const platform = typeof body.platform === "string" ? body.platform.slice(0, 40) : "unknown";
-    if (secret.length < 32 || secret.length > 256 || !installId || !deviceName) {
-      return response({ error: "invalid_pairing_request" }, 400);
-    }
+  // The old player-generated pairing flow is intentionally disabled.
+  if (path === "/v1/pair/start" || path === "/v1/pair/status" || path === "/v1/admin/pair/approve") {
+    return response({ error: "legacy_activation_disabled", message: "Aggiorna Extractor e Player Lite per usare i codici monouso." }, 410);
+  }
 
-    // Limita l'abuso dell'associazione: massimo 10 richieste per IP in un'ora.
+  if (request.method === "POST" && path === "/v2/admin/activation-codes") {
+    if (!(await requireAdmin(request, env))) return response({ error: "unauthorized" }, 401);
+    const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    const random = new Uint8Array(10);
+    crypto.getRandomValues(random);
+    const code = Array.from(random, (value) => alphabet[value % alphabet.length]).join("");
+    await env.DB.prepare("DELETE FROM activation_codes WHERE expires_at < ? OR (consumed_at IS NOT NULL AND consumed_at < ?)")
+      .bind(Date.now() - 24 * 60 * 60 * 1000, Date.now() - 7 * 24 * 60 * 60 * 1000).run();
+    const codeHash = await sha256(code);
+    const now = Date.now();
+    const expiresAt = now + 10 * 60 * 1000;
+    await env.DB.prepare(
+      "INSERT INTO activation_codes (code_hash, created_at, expires_at) VALUES (?, ?, ?)"
+    ).bind(codeHash, now, expiresAt).run();
+    return response({ code, expiresAt, expiresInSeconds: 600 }, 201);
+  }
+
+  if (request.method === "POST" && path === "/v2/activate") {
+    let body: any;
+    try { body = await readJson(request, 16_384); } catch {
+      return response({ error: "invalid_json" }, 400);
+    }
+    const code = typeof body.code === "string" ? body.code.toUpperCase().replace(/[^A-Z0-9]/g, "") : "";
+    const installId = typeof body.installId === "string" ? body.installId.slice(0, 100) : "";
+    const deviceSecret = typeof body.deviceSecret === "string" ? body.deviceSecret : "";
+    const technicalName = typeof body.deviceName === "string" ? body.deviceName.trim().slice(0, 100) : "";
+    const platform = typeof body.platform === "string" ? body.platform.trim().slice(0, 40) : "unknown";
+    if (!/^[A-HJ-NP-Z2-9]{10}$/.test(code) || !installId || deviceSecret.length < 32 || deviceSecret.length > 256 || !technicalName) {
+      return response({ error: "invalid_activation_request" }, 400);
+    }
     const clientIp = request.headers.get("CF-Connecting-IP") || "unknown";
     const ipHash = await sha256(clientIp);
     const since = Date.now() - 60 * 60 * 1000;
@@ -159,66 +181,24 @@ async function route(request: Request, env: Env): Promise<Response> {
     const attempts = await env.DB.prepare(
       "SELECT COUNT(*) AS total FROM pair_attempts WHERE ip_hash = ? AND created_at > ?"
     ).bind(ipHash, since).first<{ total: number }>();
-    if ((attempts?.total || 0) >= 10) return response({ error: "pairing_rate_limited" }, 429);
+    if ((attempts?.total || 0) >= 8) return response({ error: "activation_rate_limited" }, 429);
     await env.DB.prepare("INSERT INTO pair_attempts (ip_hash, created_at) VALUES (?, ?)").bind(ipHash, Date.now()).run();
 
-    const pairingId = crypto.randomUUID();
-    const tokenHash = await sha256(secret);
-    // Una nuova associazione dalla stessa installazione invalida l'eventuale richiesta precedente.
-    await env.DB.prepare(
-      "UPDATE devices SET status = 'expired', pairing_code = NULL WHERE install_id = ? AND status = 'pending'"
-    ).bind(installId).run();
-    let code = "";
-    for (let attempt = 0; attempt < 8; attempt++) {
-      const random = new Uint32Array(1);
-      crypto.getRandomValues(random);
-      code = String(random[0] % 1_000_000).padStart(6, "0");
-      const existing = await env.DB.prepare(
-        "SELECT device_id FROM devices WHERE pairing_code = ? AND status = 'pending' AND expires_at > ? LIMIT 1"
-      ).bind(code, Date.now()).first();
-      if (!existing) break;
-      code = "";
-    }
-    if (!code) return response({ error: "pairing_unavailable" }, 503);
-
+    const codeHash = await sha256(code);
     const now = Date.now();
-    const expiresAt = now + 10 * 60 * 1000;
-    await env.DB.prepare(
-      "INSERT INTO devices (device_id, install_id, device_name, platform, token_hash, status, pairing_code, created_at, expires_at) VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?)"
-    ).bind(pairingId, installId, deviceName, platform, tokenHash, code, now, expiresAt).run();
-    return response({ pairingId, code, expiresAt, pollAfterSeconds: 3 }, 201);
-  }
+    const consumed = await env.DB.prepare(
+      "UPDATE activation_codes SET consumed_at = ?, consumed_install_id = ? WHERE code_hash = ? AND consumed_at IS NULL AND expires_at > ? RETURNING code_hash"
+    ).bind(now, installId, codeHash, now).first<{ code_hash: string }>();
+    if (!consumed) return response({ error: "activation_code_invalid_or_used" }, 403);
 
-  if (request.method === "GET" && path === "/v1/pair/status") {
-    const pairingId = url.searchParams.get("pairingId") || "";
-    const token = bearer(request);
-    if (!pairingId || !token) return response({ error: "missing_pairing_credentials" }, 400);
-    const tokenHash = await sha256(token);
-    const row = await env.DB.prepare(
-      "SELECT status, expires_at FROM devices WHERE device_id = ? AND token_hash = ? LIMIT 1"
-    ).bind(pairingId, tokenHash).first<{ status: string; expires_at: number }>();
-    if (!row) return response({ error: "pairing_not_found" }, 404);
-    if (row.status === "pending" && row.expires_at <= Date.now()) {
-      await env.DB.prepare("UPDATE devices SET status = 'expired', pairing_code = NULL WHERE device_id = ?").bind(pairingId).run();
-      return response({ status: "expired" });
-    }
-    return response({ status: row.status });
-  }
-
-  if (request.method === "POST" && path === "/v1/admin/pair/approve") {
-    if (!(await requireAdmin(request, env))) return response({ error: "unauthorized" }, 401);
-    let body: any;
-    try { body = await readJson(request, 8_192); } catch { return response({ error: "invalid_json" }, 400); }
-    const code = typeof body.code === "string" ? body.code : "";
-    if (!/^\d{6}$/.test(code)) return response({ error: "invalid_code" }, 400);
-    const row = await env.DB.prepare(
-      "SELECT device_id, device_name, platform FROM devices WHERE pairing_code = ? AND status = 'pending' AND expires_at > ? LIMIT 1"
-    ).bind(code, Date.now()).first<{ device_id: string; device_name: string; platform: string }>();
-    if (!row) return response({ error: "code_not_found_or_expired" }, 404);
+    const deviceId = crypto.randomUUID();
+    const tokenHash = await sha256(deviceSecret);
+    const leaseExpiresAt = now + 72 * 60 * 60 * 1000;
+    const deviceName = technicalName;
     await env.DB.prepare(
-      "UPDATE devices SET status = 'approved', pairing_code = NULL, approved_at = ? WHERE device_id = ? AND status = 'pending'"
-    ).bind(Date.now(), row.device_id).run();
-    return response({ approved: true, deviceId: row.device_id, deviceName: row.device_name, platform: row.platform });
+      "INSERT INTO devices (device_id, install_id, device_name, display_name, platform, token_hash, status, created_at, expires_at, approved_at, activated_at, last_seen_at, lease_expires_at) VALUES (?, ?, ?, ?, ?, ?, 'approved', ?, ?, ?, ?, ?, ?)"
+    ).bind(deviceId, installId, deviceName, deviceName, platform, tokenHash, now, now, now, now, now, leaseExpiresAt).run();
+    return response({ activated: true, deviceId, displayName: deviceName, leaseExpiresAt, offlineLeaseHours: 72 }, 201);
   }
 
   if (request.method === "GET" && path === "/v1/config") {
@@ -230,8 +210,12 @@ async function route(request: Request, env: Env): Promise<Response> {
     await env.DB.prepare("UPDATE devices SET last_seen_at = ? WHERE device_id = ?").bind(Date.now(), device.id).run();
     if (!row) return response({ error: "no_configuration_published" }, 404);
     const sinceVersion = Number(url.searchParams.get("sinceVersion") || "0");
+    const leaseExpiresAt = Date.now() + 72 * 60 * 60 * 1000;
+    await env.DB.prepare("UPDATE devices SET last_seen_at = ?, lease_expires_at = ? WHERE device_id = ? AND status = 'approved'")
+      .bind(Date.now(), leaseExpiresAt, device.id).run();
     const metadata = {
       schemaVersion: 1,
+      leaseExpiresAt,
       version: row.version,
       updateId: row.update_id,
       checksum: row.checksum,
@@ -269,9 +253,28 @@ async function route(request: Request, env: Env): Promise<Response> {
   if (request.method === "GET" && path === "/v1/admin/devices") {
     if (!(await requireAdmin(request, env))) return response({ error: "unauthorized" }, 401);
     const result = await env.DB.prepare(
-      "SELECT device_id AS deviceId, device_name AS deviceName, platform, status, created_at AS createdAt, approved_at AS approvedAt, last_seen_at AS lastSeenAt FROM devices ORDER BY created_at DESC LIMIT 200"
+      "SELECT device_id AS deviceId, device_name AS deviceName, COALESCE(display_name, device_name) AS displayName, platform, status, created_at AS createdAt, approved_at AS approvedAt, activated_at AS activatedAt, revoked_at AS revokedAt, last_seen_at AS lastSeenAt, lease_expires_at AS leaseExpiresAt FROM devices ORDER BY created_at DESC LIMIT 500"
     ).all();
-    return response({ devices: result.results || [] });
+    const devices = result.results || [];
+    return response({
+      devices,
+      authorizedDevices: devices.filter((device: any) => device.status === "approved"),
+      revokedDevices: devices.filter((device: any) => device.status === "revoked"),
+    });
+  }
+
+  if (request.method === "POST" && path === "/v2/admin/devices/rename") {
+    if (!(await requireAdmin(request, env))) return response({ error: "unauthorized" }, 401);
+    let body: any;
+    try { body = await readJson(request, 8_192); } catch { return response({ error: "invalid_json" }, 400); }
+    const deviceId = typeof body.deviceId === "string" ? body.deviceId.trim() : "";
+    const displayName = typeof body.displayName === "string" ? body.displayName.trim().replace(/\s+/g, " ").slice(0, 60) : "";
+    if (!deviceId || !displayName) return response({ error: "invalid_device_name" }, 400);
+    const result = await env.DB.prepare(
+      "UPDATE devices SET display_name = ? WHERE device_id = ? AND status IN ('approved', 'revoked')"
+    ).bind(displayName, deviceId).run();
+    if (!result.meta.changes) return response({ error: "device_not_found" }, 404);
+    return response({ renamed: true, deviceId, displayName });
   }
 
   if (request.method === "POST" && path === "/v1/admin/devices/revoke") {
@@ -281,8 +284,8 @@ async function route(request: Request, env: Env): Promise<Response> {
     const deviceId = typeof body.deviceId === "string" ? body.deviceId : "";
     if (!deviceId) return response({ error: "invalid_device_id" }, 400);
     const result = await env.DB.prepare(
-      "UPDATE devices SET status = 'revoked', pairing_code = NULL WHERE device_id = ? AND status = 'approved'"
-    ).bind(deviceId).run();
+      "UPDATE devices SET status = 'revoked', pairing_code = NULL, revoked_at = ? WHERE device_id = ? AND status = 'approved'"
+    ).bind(Date.now(), deviceId).run();
     if (!result.meta.changes) return response({ error: "device_not_found" }, 404);
     return response({ revoked: true, deviceId });
   }
