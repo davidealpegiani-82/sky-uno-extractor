@@ -602,130 +602,81 @@ class MainActivity : FragmentActivity() {
     }
 
     private fun approveCloudPlayer() {
-        runCloudAdminTask(
-            task = { CloudSyncAdmin.createActivationCode(this) },
-            onSuccess = { result ->
-                val code = result.optString("code")
-                val content = LinearLayout(this).apply {
-                    orientation = LinearLayout.VERTICAL
-                    setPadding(dp(24), dp(12), dp(24), dp(8))
-                    addView(TextView(this@MainActivity).apply {
-                        text = code
-                        textSize = 30f
-                        letterSpacing = 0.16f
-                        setTextColor(CYAN)
-                        setTypeface(null, android.graphics.Typeface.BOLD)
-                        gravity = Gravity.CENTER
-                    })
-                    addView(labelForDialog("Codice monouso · valido 10 minuti · utilizzabile su un solo dispositivo"))
+        val codeInput = EditText(this).apply {
+            hint = "Codice a 6 cifre mostrato dal Player"
+            setSingleLine(true)
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+            filters = arrayOf(android.text.InputFilter.LengthFilter(6))
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Autorizza un nuovo Player")
+            .setMessage("Inserisci il codice temporaneo visualizzato sul dispositivo da autorizzare.")
+            .setView(codeInput)
+            .setNegativeButton("Annulla", null)
+            .setPositiveButton("Autorizza") { _, _ ->
+                val code = codeInput.text.toString().trim()
+                if (!code.matches(Regex("\\d{6}"))) {
+                    toast("Il codice deve contenere 6 cifre.")
+                    return@setPositiveButton
                 }
-                AlertDialog.Builder(this)
-                    .setTitle("Nuovo codice di attivazione")
-                    .setView(content)
-                    .setPositiveButton("Copia codice") { _, _ ->
-                        val clipboard = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                        clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Codice Sky Player", code))
-                        toast("Codice copiato. Comunicalo al dispositivo da attivare.")
+                runCloudAdminTask(
+                    task = { CloudSyncAdmin.approve(this, code) },
+                    onSuccess = { result ->
+                        status.text = "Player autorizzato: ${result.optString("deviceName")}."
+                        toast(status.text.toString())
                     }
-                    .setNegativeButton("Chiudi", null)
-                    .show()
+                )
             }
-        )
+            .show()
     }
 
     private fun showCloudDevices() {
-        status.text = "Caricamento dispositivi…"
+        status.text = "Caricamento dispositivi autorizzati…"
         Thread {
             try {
-                val result = CloudSyncAdmin.devices(this)
-                val authorized = result.optJSONArray("authorizedDevices") ?: JSONArray()
-                val revoked = result.optJSONArray("revokedDevices") ?: JSONArray()
+                val devices = CloudSyncAdmin.devices(this)
                 runOnUiThread {
                     if (isFinishing || isDestroyed) return@runOnUiThread
-                    val panel = LinearLayout(this).apply {
-                        orientation = LinearLayout.VERTICAL
-                        setPadding(dp(20), dp(8), dp(20), dp(4))
+                    if (devices.length() == 0) {
+                        toast("Nessun dispositivo registrato.")
+                        return@runOnUiThread
                     }
-                    val activeButton = Button(this).apply {
-                        text = "AUTORIZZATI  ·  ${authorized.length()}"
-                        isAllCaps = false
-                        setOnClickListener { showDeviceGroup("Dispositivi autorizzati", authorized, true) }
+                    val labels = Array(devices.length()) { index ->
+                        val item = devices.getJSONObject(index)
+                        "${item.optString("deviceName")} · ${item.optString("platform")} · ${item.optString("status")}"
                     }
-                    val revokedButton = Button(this).apply {
-                        text = "REVOCATI  ·  ${revoked.length()}"
-                        isAllCaps = false
-                        setOnClickListener { showDeviceGroup("Dispositivi revocati", revoked, false) }
-                    }
-                    panel.addView(activeButton)
-                    panel.addView(revokedButton)
                     AlertDialog.Builder(this)
-                        .setTitle("Gestione dispositivi")
-                        .setView(panel)
+                        .setTitle("Dispositivi Sky Player")
+                        .setItems(labels) { _, index ->
+                            val item = devices.getJSONObject(index)
+                            if (item.optString("status") != "approved") {
+                                toast("Questo dispositivo non è attualmente autorizzato.")
+                            } else {
+                                AlertDialog.Builder(this)
+                                    .setTitle("Revocare l'accesso?")
+                                    .setMessage("Il dispositivo ${item.optString("deviceName")} non potrà più scaricare la configurazione.")
+                                    .setNegativeButton("Annulla", null)
+                                    .setPositiveButton("Revoca") { _, _ ->
+                                        runCloudAdminTask(
+                                            task = { CloudSyncAdmin.revoke(this, item.optString("deviceId")) },
+                                            onSuccess = {
+                                                toast("Autorizzazione revocata.")
+                                                showCloudDevices()
+                                            }
+                                        )
+                                    }
+                                    .show()
+                            }
+                        }
                         .setNegativeButton("Chiudi", null)
                         .show()
                 }
             } catch (e: Exception) {
-                runOnUiThread { if (!isFinishing && !isDestroyed) toast(e.message ?: "Impossibile caricare i dispositivi.") }
+                runOnUiThread {
+                    if (!isFinishing && !isDestroyed) toast(e.message ?: "Impossibile caricare i dispositivi.")
+                }
             }
         }.start()
-    }
-
-    private fun showDeviceGroup(title: String, devices: JSONArray, canRevoke: Boolean) {
-        if (devices.length() == 0) {
-            toast("Nessun dispositivo in questo elenco.")
-            return
-        }
-        val labels = Array(devices.length()) { index ->
-            val item = devices.getJSONObject(index)
-            val name = item.optString("displayName").ifBlank { item.optString("deviceName") }
-            val lastSeen = item.optLong("lastSeenAt", 0L).let {
-                if (it > 0) java.text.DateFormat.getDateTimeInstance().format(java.util.Date(it)) else "mai collegato"
-            }
-            "$name · ${item.optString("platform")}\nUltimo accesso: $lastSeen"
-        }
-        AlertDialog.Builder(this)
-            .setTitle("$title  ·  ${devices.length()}")
-            .setItems(labels) { _, index ->
-                val item = devices.getJSONObject(index)
-                val deviceId = item.optString("deviceId")
-                val currentName = item.optString("displayName").ifBlank { item.optString("deviceName") }
-                val nameInput = EditText(this).apply {
-                    setText(currentName)
-                    setSingleLine(true)
-                    hint = "Nome dispositivo (max 60 caratteri)"
-                    filters = arrayOf(android.text.InputFilter.LengthFilter(60))
-                }
-                val actions = AlertDialog.Builder(this)
-                    .setTitle(currentName)
-                    .setMessage("Piattaforma: ${item.optString("platform")}\nStato: ${item.optString("status")}")
-                    .setView(nameInput)
-                    .setNeutralButton("Rinomina", null)
-                if (canRevoke) actions.setPositiveButton("Revoca accesso") { _, _ ->
-                    runCloudAdminTask(
-                        task = { CloudSyncAdmin.revoke(this, deviceId) },
-                        onSuccess = { toast("Dispositivo spostato nell'elenco revocati."); showCloudDevices() }
-                    )
-                } else actions.setPositiveButton("Chiudi", null)
-                actions.setNegativeButton("Annulla", null)
-                actions.create().also { dialog ->
-                    dialog.setOnShowListener {
-                        dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
-                            val newName = nameInput.text.toString().trim()
-                            if (newName.isBlank()) {
-                                nameInput.error = "Inserisci un nome riconoscibile"
-                            } else {
-                                runCloudAdminTask(
-                                    task = { CloudSyncAdmin.rename(this, deviceId, newName) },
-                                    onSuccess = { toast("Nome dispositivo aggiornato."); showCloudDevices(); dialog.dismiss() }
-                                )
-                            }
-                        }
-                    }
-                    dialog.show()
-                }
-            }
-            .setNegativeButton("Indietro", null)
-            .show()
     }
 
     private fun section(text: String) {
@@ -1097,7 +1048,9 @@ class MainActivity : FragmentActivity() {
                     .put("logo", channel.logo)
             )
         }
-        val data = array.toString().replace("<", "\\u003c")
+        // I canali non vengono incorporati nell'HTML distribuito: sono consegnati
+        // dal Cloud Sync solo dopo l'attivazione monouso del singolo browser.
+        val data = "[]"
         val template = assets.open("player-template.html")
             .bufferedReader(StandardCharsets.UTF_8)
             .use { it.readText() }
