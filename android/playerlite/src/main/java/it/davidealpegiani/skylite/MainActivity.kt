@@ -215,12 +215,6 @@ class MainActivity : Activity() {
                     true
                 } else false
             }
-            setOnKeyListener { _, keyCode, event ->
-                if (keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_UP) {
-                    beginCloudPairing()
-                    true
-                } else false
-            }
         }
         controls.addView(activationCodeInput, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, dp(54)
@@ -718,7 +712,7 @@ class MainActivity : Activity() {
             if (isTvDevice()) controlsPanel.visibility = View.VISIBLE
             titleView.visibility = View.VISIBLE
             statusView.visibility = View.VISIBLE
-            diagnosticsView.visibility = View.VISIBLE
+            diagnosticsView.visibility = if (PlayerCloudSync.hasValidLease(this)) View.VISIBLE else View.GONE
             // Ripristina i controlli Cloud solo se il Player non è già associato.
             if (!PlayerCloudSync.hasToken(this)) {
                 endpointInput.visibility = View.GONE
