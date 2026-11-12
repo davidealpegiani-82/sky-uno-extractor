@@ -8,6 +8,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
+import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
@@ -100,6 +101,7 @@ class MainActivity : Activity() {
     private lateinit var playerContainer: FrameLayout
     private lateinit var controlsPanel: LinearLayout
     private lateinit var cloudHeaderView: TextView
+    private lateinit var channelsHeaderView: TextView
     private val cloudHandler = Handler(Looper.getMainLooper())
     private val cloudExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
     private val cloudChannels = mutableListOf<CloudChannel>()
@@ -175,6 +177,7 @@ class MainActivity : Activity() {
             setPadding(dp(12), 0, dp(12), dp(8))
         }
         controls.addView(diagnosticsView)
+        diagnosticsView.visibility = if (PlayerCloudSync.hasValidLease(this)) View.VISIBLE else View.GONE
 
         cloudHeaderView = TextView(this).apply {
             text = "☁  SINCRONIZZAZIONE CLOUD"
@@ -183,7 +186,7 @@ class MainActivity : Activity() {
             setTypeface(null, android.graphics.Typeface.BOLD)
             setPadding(16, 12, 16, 4)
         }
-        controls.addView(cloudHeaderView)
+        // La configurazione Cloud resta interna: non va mostrata nell'interfaccia del Player.
 
         endpointInput = EditText(this).apply {
             hint = "Indirizzo Sky Cloud Sync (HTTPS)"
@@ -194,11 +197,10 @@ class MainActivity : Activity() {
             setTextColor(Color.WHITE)
             setHintTextColor(Color.rgb(164, 181, 202))
         }
-        controls.addView(endpointInput, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, 48
-        ).apply { setMargins(12, 4, 12, 6) })
+        endpointInput.visibility = View.GONE
         activationCodeInput = EditText(this).apply {
-            hint = "Codice monouso generato da Sky Extractor"
+            hint = "Codice monouso generato da Admin"
+            imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_DONE
             setSingleLine(true)
             textSize = 16f
             inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS
@@ -206,6 +208,19 @@ class MainActivity : Activity() {
             setTextColor(Color.WHITE)
             setHintTextColor(Color.rgb(164, 181, 202))
             setPadding(dp(16), dp(6), dp(16), dp(6))
+            setOnEditorActionListener { _, actionId, event ->
+                val enterPressed = event?.keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_UP
+                if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_DONE || enterPressed) {
+                    beginCloudPairing()
+                    true
+                } else false
+            }
+            setOnKeyListener { _, keyCode, event ->
+                if (keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_UP) {
+                    beginCloudPairing()
+                    true
+                } else false
+            }
         }
         controls.addView(activationCodeInput, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, dp(54)
@@ -230,18 +245,16 @@ class MainActivity : Activity() {
             background = primaryActionBackground(false)
             setOnClickListener { beginCloudPairing() }
         }
-        controls.addView(pairButton, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, dp(68)
-        ).apply { setMargins(dp(12), dp(2), dp(12), dp(10)) })
+        // L'attivazione si conferma dal campo codice (Invio/Fatto), senza pulsante dedicato.
         cloudStatusView = TextView(this).apply {
-            text = "Inserisci il codice monouso generato da Sky Extractor per attivare questo dispositivo."
+            text = "Accesso bloccato: inserisci un codice monouso generato da Admin"
             setTextColor(Color.rgb(164, 202, 220))
             textSize = 12f
             setPadding(16, 4, 16, 10)
         }
         controls.addView(cloudStatusView)
 
-        val channelsHeader = TextView(this).apply {
+        channelsHeaderView = TextView(this).apply {
             text = "ELENCO CANALI  ·  OK PER RIPRODURRE"
             setTextColor(Color.WHITE)
             textSize = if (tvMode) 14f else 12f
@@ -249,7 +262,8 @@ class MainActivity : Activity() {
             setPadding(dp(16), dp(12), dp(12), dp(8))
             contentDescription = "Elenco canali. Usa le frecce per scegliere e OK per riprodurre."
         }
-        controls.addView(channelsHeader)
+        controls.addView(channelsHeaderView)
+        channelsHeaderView.visibility = if (PlayerCloudSync.hasValidLease(this)) View.VISIBLE else View.GONE
 
         playerContainer = FrameLayout(this).apply {
             layoutParams = if (tvMode) {
@@ -360,8 +374,10 @@ class MainActivity : Activity() {
             activationCodeInput.visibility = View.GONE
             pairButton.visibility = View.GONE
             cloudStatusView.text = "Dispositivo autorizzato · licenza offline valida."
+            channelsHeaderView.visibility = View.VISIBLE
+            diagnosticsView.visibility = View.VISIBLE
         }
-        if (tvMode && cloudChannels.isEmpty()) pairButton.requestFocus()
+        if (tvMode && cloudChannels.isEmpty() && !PlayerCloudSync.hasValidLease(this)) activationCodeInput.post { activationCodeInput.requestFocus() }
     }
 
     private fun isTvDevice(): Boolean =
@@ -391,9 +407,9 @@ class MainActivity : Activity() {
         if (!::channelsList.isInitialized) return
         channelsList.removeAllViews()
         if (cloudChannels.isEmpty()) {
-            if (isTvDevice()) pairButton.post { pairButton.requestFocus() }
+            if (isTvDevice() && !PlayerCloudSync.hasValidLease(this)) activationCodeInput.post { activationCodeInput.requestFocus() }
             val empty = TextView(this).apply {
-                text = "Nessun canale visibile. Inserisci il codice monouso fornito da Sky Extractor per attivare il dispositivo."
+                text = "Nessun canale visibile. Inserisci il codice monouso fornito da Admin per attivare il dispositivo."
                 setTextColor(Color.rgb(164, 181, 202))
                 textSize = if (isTvDevice()) 16f else 14f
                 includeFontPadding = true
@@ -514,12 +530,6 @@ class MainActivity : Activity() {
         }
 
     private fun beginCloudPairing() {
-        try {
-            PlayerCloudSync.saveBaseUrl(this, endpointInput.text.toString())
-        } catch (e: Exception) {
-            Toast.makeText(this, e.message ?: "Indirizzo non valido.", Toast.LENGTH_LONG).show()
-            return
-        }
         val code = activationCodeInput.text.toString().trim().uppercase()
         if (!code.matches(Regex("[A-HJ-NP-Z2-9]{10}"))) {
             activationCodeInput.error = "Inserisci il codice monouso di 10 caratteri"
@@ -555,12 +565,14 @@ class MainActivity : Activity() {
             cloudChannels.clear()
             renderCloudChannels()
             stopPlaybackForAuthorization()
-            endpointInput.visibility = View.VISIBLE
+            endpointInput.visibility = View.GONE
             activationCodeInput.visibility = View.VISIBLE
-            pairButton.visibility = View.VISIBLE
+            pairButton.visibility = View.GONE
+            diagnosticsView.visibility = View.GONE
+            channelsHeaderView.visibility = View.GONE
             pairButton.isEnabled = true
             pairButton.text = "ATTIVA QUESTO DISPOSITIVO"
-            cloudStatusView.text = "Accesso bloccato: inserisci un codice monouso generato da Sky Extractor."
+            cloudStatusView.text = "Accesso bloccato: inserisci un codice monouso generato da Admin"
             return
         }
         cloudStatusView.text = "Controllo aggiornamenti Sky Cloud Sync…"
@@ -585,12 +597,14 @@ class MainActivity : Activity() {
                         cloudChannels.clear()
                         renderCloudChannels()
                         stopPlaybackForAuthorization()
-                        endpointInput.visibility = View.VISIBLE
+                        endpointInput.visibility = View.GONE
                         activationCodeInput.visibility = View.VISIBLE
-                        pairButton.visibility = View.VISIBLE
+                        pairButton.visibility = View.GONE
+                        diagnosticsView.visibility = View.GONE
+                        channelsHeaderView.visibility = View.GONE
                         pairButton.isEnabled = true
                         pairButton.text = "ATTIVA QUESTO DISPOSITIVO"
-                        cloudStatusView.text = "Autorizzazione revocata. Inserisci un nuovo codice."
+                        cloudStatusView.text = "Autorizzazione revocata. Inserisci un nuovo codice generato da Admin."
                     } else {
                         loadCachedChannels()
                         cloudStatusView.text = if (cloudChannels.isEmpty()) {
@@ -609,6 +623,8 @@ class MainActivity : Activity() {
         player?.apply { stop(); clearMediaItems() }
         titleView.text = "SKY PLAYER LITE"
         statusView.text = "Attivazione richiesta"
+        diagnosticsView.visibility = View.GONE
+        channelsHeaderView.visibility = View.GONE
     }
 
     private fun playCloudChannel(channel: CloudChannel) {
@@ -705,12 +721,12 @@ class MainActivity : Activity() {
             diagnosticsView.visibility = View.VISIBLE
             // Ripristina i controlli Cloud solo se il Player non è già associato.
             if (!PlayerCloudSync.hasToken(this)) {
-                endpointInput.visibility = View.VISIBLE
-                pairButton.visibility = View.VISIBLE
+                endpointInput.visibility = View.GONE
+                pairButton.visibility = View.GONE
             }
             cloudStatusView.visibility = View.VISIBLE
             channelScroll.visibility = View.VISIBLE
-            cloudHeaderView.visibility = View.VISIBLE
+            cloudHeaderView.visibility = View.GONE
             if (isTvDevice()) playerParams.width = 0
             playerParams.height = if (isTvDevice()) ViewGroup.LayoutParams.MATCH_PARENT else 0
             playerParams.weight = 1f
