@@ -613,6 +613,15 @@ class MainActivity : Activity() {
         if (isTvDevice()) playerView.post { playerView.requestFocus() }
     }
 
+    private fun isVisibleInHierarchy(view: View): Boolean {
+        var current: View? = view
+        while (current != null) {
+            if (current.visibility != View.VISIBLE) return false
+            current = current.parent as? View
+        }
+        return true
+    }
+
     private fun toggleFullscreen() {
         val enteringFullscreen = !isFullscreen
         if (enteringFullscreen && isTvDevice()) focusBeforeFullscreen = currentFocus
@@ -675,7 +684,7 @@ class MainActivity : Activity() {
             if (isTvDevice()) {
                 val restore = focusBeforeFullscreen
                 focusBeforeFullscreen = null
-                val target = restore?.takeIf { it.visibility == View.VISIBLE && it.isFocusable } ?: playerView
+                val target = restore?.takeIf { it.isFocusable && isVisibleInHierarchy(it) } ?: playerView
                 target.post { target.requestFocus() }
             }
         }
