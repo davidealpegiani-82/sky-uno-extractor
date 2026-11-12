@@ -1,5 +1,6 @@
 name = "sky-cloud-sync"
 main = "src/index.ts"
+migrations_dir = "migrations"
 compatibility_date = "2026-11-10"
 
 [[d1_databases]]

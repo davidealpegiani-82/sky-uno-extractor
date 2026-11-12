@@ -27,7 +27,7 @@ Poi pubblicare il Worker:
 npx wrangler deploy
 ```
 
-Per un database nuovo usare `schema.sql`.
+Per aggiornare un database già esistente, la pipeline GitHub applica automaticamente le migrazioni versionate con `wrangler d1 migrations apply sky-cloud-sync --remote` prima del deploy. Per un database nuovo usare `schema.sql` come schema iniziale; quindi la pipeline applicherà le migrazioni successive.
 
 Configurare `SKY_ADMIN_KEY` come secret Cloudflare, mai nel repository o nelle APK.
 
