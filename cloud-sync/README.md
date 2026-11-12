@@ -15,19 +15,14 @@ Backend Cloudflare Worker + D1 per la distribuzione autorizzata delle configuraz
 
 ## Deploy / migrazione D1
 
-Prima del deploy Worker, applicare una sola volta la migrazione al database già esistente:
+La pipeline GitHub applica automaticamente le migrazioni versionate con `wrangler d1 migrations apply sky-cloud-sync --remote` prima del deploy. Per un'applicazione manuale, dalla cartella `cloud-sync/` esegui:
 
 ```sh
-npx wrangler d1 execute sky-cloud-sync --remote --file=./migrations/0002_device_activation.sql
-```
-
-Poi pubblicare il Worker:
-
-```sh
+npx wrangler d1 migrations apply sky-cloud-sync --remote
 npx wrangler deploy
 ```
 
-Per aggiornare un database già esistente, la pipeline GitHub applica automaticamente le migrazioni versionate con `wrangler d1 migrations apply sky-cloud-sync --remote` prima del deploy. La migrazione `0001_init.sql` crea le tabelle base in modo compatibile anche con il database esistente; `0002_device_activation.sql` aggiunge i campi e la tabella per il nuovo sistema. Evita di eseguire prima lo snapshot `schema.sql` e poi le migrazioni, perché lo snapshot contiene già lo schema aggiornato.
+La migrazione `0001_init.sql` crea le tabelle base in modo compatibile anche con il database già esistente; `0002_device_activation.sql` aggiunge i campi e la tabella per il nuovo sistema. Non eseguire prima lo snapshot `schema.sql` e poi le migrazioni, perché lo snapshot contiene già lo schema aggiornato.
 
 Configurare `SKY_ADMIN_KEY` come secret Cloudflare, mai nel repository o nelle APK.
 
