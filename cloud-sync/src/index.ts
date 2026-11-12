@@ -107,10 +107,10 @@ async function route(request: Request, env: Env): Promise<Response> {
     try {
       const probe = await env.DB.prepare("SELECT 1 AS ok").first<{ ok: number }>();
       const tableResult = await env.DB.prepare(
-        "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('devices', 'config', 'pair_attempts') ORDER BY name"
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('devices', 'config', 'pair_attempts', 'activation_codes') ORDER BY name"
       ).all<{ name: string }>();
       const found = new Set((tableResult.results || []).map((row) => row.name));
-      const required = ["config", "devices", "pair_attempts"];
+      const required = ["config", "devices", "pair_attempts", "activation_codes"];
       const missingTables = required.filter((name) => !found.has(name));
       const databaseOk = probe?.ok === 1;
       const schemaReady = missingTables.length === 0;
@@ -150,6 +150,8 @@ async function route(request: Request, env: Env): Promise<Response> {
     const random = new Uint8Array(10);
     crypto.getRandomValues(random);
     const code = Array.from(random, (value) => alphabet[value % alphabet.length]).join("");
+    await env.DB.prepare("DELETE FROM activation_codes WHERE expires_at < ? OR (consumed_at IS NOT NULL AND consumed_at < ?)")
+      .bind(Date.now() - 24 * 60 * 60 * 1000, Date.now() - 7 * 24 * 60 * 60 * 1000).run();
     const codeHash = await sha256(code);
     const now = Date.now();
     const expiresAt = now + 10 * 60 * 1000;
