@@ -1050,16 +1050,13 @@ class MainActivity : FragmentActivity() {
         }
         // I canali non vengono incorporati nell'HTML distribuito: sono consegnati
         // dal Cloud Sync solo dopo l'attivazione monouso del singolo browser.
-        val data = "[]"
         val template = assets.open("player-template.html")
             .bufferedReader(StandardCharsets.UTF_8)
             .use { it.readText() }
-        check(template.contains("__CHANNELS__") && template.contains("__CLOUD_SYNC_URL__")) {
-            "Modello Sky Player non valido: segnaposto canali o Cloud Sync mancante."
+        check(!template.contains("__CHANNELS__") && template.contains("__CLOUD_SYNC_URL__")) {
+            "Modello Sky Player non valido: i canali non devono essere incorporati e il segnaposto Cloud Sync è obbligatorio."
         }
-        return template
-            .replace("__CHANNELS__", data)
-            .replace("__CLOUD_SYNC_URL__", JSONObject.quote(CloudSyncAdmin.baseUrl(this)))
+        return template.replace("__CLOUD_SYNC_URL__", JSONObject.quote(CloudSyncAdmin.baseUrl(this)))
     }
 
     private fun toggleFullscreen() {

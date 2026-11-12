@@ -7,14 +7,16 @@ const lite = readFileSync('android/playerlite/src/main/java/it/davidealpegiani/s
 const liteManifest = readFileSync('android/playerlite/src/main/AndroidManifest.xml', 'utf8');
 const web = readFileSync('index.html', 'utf8');
 const syntaxTemplate = template
-  .replace('__CHANNELS__', '[]')
   .replace('__CLOUD_SYNC_URL__', JSON.stringify('https://sky-cloud-sync.example.workers.dev'));
 const inlineScripts = [...syntaxTemplate.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)]
   .map(match => match[1])
   .filter(source => source.trim());
 assert.ok(inlineScripts.length, 'HTML Player must contain an inline player script');
 new Script(inlineScripts.at(-1), { filename: 'sky-player-template.js' });
-assert.equal((template.match(/__CHANNELS__/g) || []).length, 1, 'template must contain exactly one channel placeholder');
+assert.equal((template.match(/__CHANNELS__/g) || []).length, 0, 'exported HTML must not embed channel data');
+assert.match(template, /\/v2\/activate/, 'template must require one-time device activation');
+assert.match(template, /leaseExpiresAt/, 'template must enforce offline authorization lease');
+assert.doesNotMatch(template, /\/v1\/pair\/(start|status)/, 'legacy pairing must be disabled');
 assert.equal((template.match(/__CLOUD_SYNC_URL__/g) || []).length, 1, 'template must contain exactly one Cloud Sync endpoint placeholder');
 assert.match(template, /function syncCloudConfig\(\)/, 'HTML Player must check the published configuration on startup');
 assert.match(template, /function pairCloudPlayer\(\)/, 'HTML Player must support individual device pairing');
