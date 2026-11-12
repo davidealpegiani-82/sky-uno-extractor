@@ -60,6 +60,13 @@ class MainActivity : Activity() {
         override fun run() {
             val current = player
             if (current == null || !::diagnosticsView.isInitialized || isFinishing || isDestroyed) return
+            if (!PlayerCloudSync.hasValidLease(this) && current.mediaItemCount > 0) {
+                stopPlaybackForAuthorization()
+                cloudChannels.clear()
+                renderCloudChannels()
+                cloudStatusView.text = "Licenza offline scaduta. Riconnetti e attiva nuovamente il dispositivo."
+                return
+            }
             val aheadMs = (current.bufferedPosition - current.currentPosition).coerceAtLeast(0L)
             val state = when (current.playbackState) {
                 Player.STATE_BUFFERING -> "BUFFERING"
@@ -380,7 +387,7 @@ class MainActivity : Activity() {
         if (cloudChannels.isEmpty()) {
             if (isTvDevice()) pairButton.post { pairButton.requestFocus() }
             val empty = TextView(this).apply {
-                text = "Nessuna lista cloud disponibile. Associa il Player oppure importa un canale da Sky Player HTML."
+                text = "Nessun canale visibile. Inserisci il codice monouso fornito da Sky Extractor per attivare il dispositivo."
                 setTextColor(Color.rgb(164, 181, 202))
                 textSize = if (isTvDevice()) 16f else 14f
                 includeFontPadding = true
@@ -866,6 +873,11 @@ class MainActivity : Activity() {
     }
 
     private fun handlePlayIntent(intent: android.content.Intent?) {
+        if (!PlayerCloudSync.hasValidLease(this)) {
+            stopPlaybackForAuthorization()
+            cloudStatusView.text = "Accesso bloccato: attiva prima il dispositivo con un codice monouso."
+            return
+        }
         val uri = intent?.data
         val streamUrl = uri?.getQueryParameter("url")
             ?: intent?.getStringExtra("url")
@@ -923,8 +935,10 @@ class MainActivity : Activity() {
         super.onStart()
         retryHandler.removeCallbacks(diagnosticsTask)
         retryHandler.post(diagnosticsTask)
-        if (resumeAfterBackground && (player?.mediaItemCount ?: 0) > 0) {
+        if (resumeAfterBackground && (player?.mediaItemCount ?: 0) > 0 && PlayerCloudSync.hasValidLease(this)) {
             player?.playWhenReady = true
+        } else if (!PlayerCloudSync.hasValidLease(this)) {
+            stopPlaybackForAuthorization()
         }
         resumeAfterBackground = false
     }
