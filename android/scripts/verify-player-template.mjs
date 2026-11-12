@@ -32,7 +32,7 @@ const bufferPolicy = template.match(/function checkBufferPolicy\(\)\s*\{[\s\S]*?
 assert.ok(bufferPolicy, 'HTML buffer policy must be present');
 assert.doesNotMatch(bufferPolicy, /video\.pause\(/, 'HTML buffer policy must not pause playback artificially');
 assert.ok(template.includes('function beginPrebuffer()'), 'startup prebuffer must be implemented');
-assert.ok(template.includes('function keepBufferLoading()'), 'low-buffer recovery must keep HLS loading');
+assert.ok(template.includes('function keepBufferLoading(force=false)'), 'low-buffer recovery must keep HLS loading with explicit stall gating');
 assert.match(template, /now-lastLoadKick<12000/, 'forced buffer recovery must use a conservative 12-second cooldown');
 assert.match(template, /now-lastHlsActivity<10000/, 'do not restart HLS after recent segment activity');
 assert.match(template, /\|\|fragmentLoading\)return/, 'do not kick HLS while a fragment request is active');
