@@ -492,7 +492,7 @@ class MainActivity : FragmentActivity() {
         button("⚙  Configura Sky Cloud Sync", false) { showCloudSyncSettings() }
         button("☁  Pubblica aggiornamento remoto", true) { publishRemoteConfiguration() }
         val adminRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        adminRow.addView(buttonView("Autorizza Player") { approveCloudPlayer() }, LinearLayout.LayoutParams(0, dp(46), 1f))
+        adminRow.addView(buttonView("Genera codice") { approveCloudPlayer() }, LinearLayout.LayoutParams(0, dp(46), 1f))
         adminRow.addView(space(8), LinearLayout.LayoutParams(dp(8), 1))
         adminRow.addView(buttonView("Gestisci dispositivi") { showCloudDevices() }, LinearLayout.LayoutParams(0, dp(46), 1f))
         root.addView(adminRow)
@@ -1029,25 +1029,39 @@ class MainActivity : FragmentActivity() {
     private fun requestHtmlExport() {
         val chosen = selectedChannels()
         if (chosen.isEmpty()) { toast("Seleziona almeno un canale."); return }
-        pendingHtml = makePlayerHtml(chosen)
-        val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
-            addCategory(Intent.CATEGORY_OPENABLE)
-            type = "text/html"
-            putExtra(Intent.EXTRA_TITLE, "sky-uno-player.html")
-        }
-        startActivityForResult(intent, SAVE_HTML)
+        AlertDialog.Builder(this)
+            .setTitle("Preparare il Player HTML?")
+            .setMessage("Per proteggere i canali, il file HTML non conterrà indirizzi o nomi della playlist. La selezione verrà pubblicata su Sky Cloud Sync e sarà visibile solo dopo l'attivazione con un codice monouso.")
+            .setNegativeButton("Annulla", null)
+            .setPositiveButton("Pubblica ed esporta") { _, _ ->
+                val payload = JSONArray()
+                chosen.forEachIndexed { index, channel ->
+                    payload.put(
+                        JSONObject()
+                            .put("id", "channel-$index")
+                            .put("name", channel.name)
+                            .put("url", channel.url)
+                            .put("logo", channel.logo)
+                    )
+                }
+                runCloudAdminTask(
+                    task = { CloudSyncAdmin.publish(this, payload) },
+                    onSuccess = { result ->
+                        pendingHtml = makePlayerHtml(chosen)
+                        val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                            addCategory(Intent.CATEGORY_OPENABLE)
+                            type = "text/html"
+                            putExtra(Intent.EXTRA_TITLE, "sky-uno-player.html")
+                        }
+                        status.text = "Playlist pubblicata · ${result.optInt("channelCount")} canali. Scegli dove salvare il file HTML."
+                        startActivityForResult(intent, SAVE_HTML)
+                    }
+                )
+            }
+            .show()
     }
 
     private fun makePlayerHtml(chosen: List<TvChannel>): String {
-        val array = JSONArray()
-        chosen.forEach { channel ->
-            array.put(
-                JSONObject()
-                    .put("name", channel.name)
-                    .put("url", channel.url)
-                    .put("logo", channel.logo)
-            )
-        }
         // I canali non vengono incorporati nell'HTML distribuito: sono consegnati
         // dal Cloud Sync solo dopo l'attivazione monouso del singolo browser.
         val template = assets.open("player-template.html")
