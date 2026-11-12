@@ -55,7 +55,9 @@ class MainActivity : Activity() {
     private lateinit var fullscreenChannelList: LinearLayout
     private var isChannelDrawerOpen = false
     private var isFullscreen = false
+    private var fullscreenOverlayVisible = false
     private var focusBeforeFullscreen: View? = null
+    private val fullscreenOverlayHideTask = Runnable { hideFullscreenOverlay() }
     private val retryHandler = Handler(Looper.getMainLooper())
     private val diagnosticsTask = object : Runnable {
         override fun run() {
@@ -124,7 +126,7 @@ class MainActivity : Activity() {
         val tvMode = isTvDevice()
         val root = LinearLayout(this).apply {
             orientation = if (tvMode) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
-            setBackgroundColor(Color.rgb(8, 13, 22))
+            setBackgroundColor(Color.rgb(5, 9, 17))
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
@@ -133,26 +135,29 @@ class MainActivity : Activity() {
         }
         val controls = if (tvMode) LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(12), dp(12), dp(12), dp(12))
-            setBackgroundColor(Color.rgb(12, 20, 32))
+            setPadding(dp(20), dp(18), dp(20), dp(18))
+            setBackgroundColor(Color.rgb(13, 22, 37))
             descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
         } else root
         controlsPanel = controls
         if (tvMode) {
-            root.addView(controls, LinearLayout.LayoutParams(dp(340), ViewGroup.LayoutParams.MATCH_PARENT))
+            root.addView(controls, LinearLayout.LayoutParams(dp(380), ViewGroup.LayoutParams.MATCH_PARENT))
         }
         titleView = TextView(this).apply {
-            text = "SKY PLAYER LITE"
+            text = "SKY PLAYER  LITE"
             setTextColor(Color.WHITE)
-            textSize = if (tvMode) 23f else 18f
+            textSize = if (tvMode) 27f else 19f
+            setTypeface(null, android.graphics.Typeface.BOLD)
+            letterSpacing = 0.06f
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(12), dp(18), dp(12), dp(10))
+            setPadding(dp(12), dp(22), dp(12), dp(8))
         }
         statusView = TextView(this).apply {
-            text = "Apri un canale da Sky Player HTML."
-            setTextColor(Color.rgb(164, 181, 202))
-            textSize = if (tvMode) 15f else 13f
-            setPadding(dp(12), 0, dp(12), dp(12))
+            text = if (tvMode) "INTRATTENIMENTO IN DIRETTA" else "Apri un canale da Sky Player HTML."
+            setTextColor(Color.rgb(143, 164, 190))
+            textSize = if (tvMode) 12f else 13f
+            letterSpacing = if (tvMode) 0.12f else 0f
+            setPadding(dp(12), 0, dp(12), dp(18))
         }
         playerView = PlayerView(this).apply {
             isFocusable = tvMode
@@ -249,11 +254,12 @@ class MainActivity : Activity() {
         controls.addView(cloudStatusView)
 
         channelsHeaderView = TextView(this).apply {
-            text = "ELENCO CANALI  ·  OK PER RIPRODURRE"
-            setTextColor(Color.WHITE)
-            textSize = if (tvMode) 14f else 12f
+            text = "I TUOI CANALI"
+            setTextColor(Color.rgb(255, 204, 64))
+            textSize = if (tvMode) 16f else 13f
             setTypeface(null, android.graphics.Typeface.BOLD)
-            setPadding(dp(16), dp(12), dp(12), dp(8))
+            letterSpacing = 0.08f
+            setPadding(dp(12), dp(22), dp(12), dp(12))
             contentDescription = "Elenco canali. Usa le frecce per scegliere e OK per riprodurre."
         }
         controls.addView(channelsHeaderView)
@@ -310,7 +316,7 @@ class MainActivity : Activity() {
 
         fullscreenChannelDrawer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.rgb(10, 18, 30))
+            setBackgroundColor(Color.rgb(8, 15, 27))
             elevation = dp(18).toFloat()
             visibility = View.GONE
             isFocusable = true
@@ -318,13 +324,13 @@ class MainActivity : Activity() {
             layoutParams = FrameLayout.LayoutParams(dp(360), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.START)
         }
         val drawerHeader = TextView(this).apply {
-            text = "SELEZIONA CANALE     ✕"
+            text = "  CANALI  ·  SELEZIONA"
             contentDescription = "Chiudi elenco canali"
             textSize = 18f
             setTypeface(null, android.graphics.Typeface.BOLD)
             setTextColor(Color.WHITE)
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(20), dp(18), dp(16), dp(18))
+            setPadding(dp(22), dp(20), dp(16), dp(20))
             isFocusable = true
             isClickable = true
             setBackground(channelActionBackground())
@@ -414,18 +420,19 @@ class MainActivity : Activity() {
         }
         cloudChannels.forEach { channel ->
             val item = TextView(this).apply {
-                text = "▶  ${channel.name}"
+                text = "▶   ${channel.name}"
                 isFocusable = true
                 isClickable = true
                 isSingleLine = false
                 maxLines = 2
                 ellipsize = android.text.TextUtils.TruncateAt.END
                 gravity = Gravity.CENTER_VERTICAL
-                textSize = if (isTvDevice()) 18f else 15f
+                textSize = if (isTvDevice()) 19f else 15f
                 includeFontPadding = true
                 setLineSpacing(dp(2).toFloat(), 1.0f)
-                setTextColor(Color.WHITE)
-                setPadding(dp(18), if (isTvDevice()) dp(18) else dp(12), dp(18), if (isTvDevice()) dp(18) else dp(12))
+                setTextColor(Color.rgb(238, 243, 250))
+                setPadding(dp(20), if (isTvDevice()) dp(22) else dp(12), dp(18), if (isTvDevice()) dp(22) else dp(12))
+                minHeight = if (isTvDevice()) dp(72) else dp(48)
                 isFocusable = true
                 isFocusableInTouchMode = !isTvDevice()
                 background = channelFocusBackground(false)
@@ -436,7 +443,7 @@ class MainActivity : Activity() {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
             ).apply {
                 height = ViewGroup.LayoutParams.WRAP_CONTENT
-                bottomMargin = dp(8)
+                bottomMargin = if (isTvDevice()) dp(10) else dp(8)
             })
         }
         renderFullscreenChannelList()
@@ -473,8 +480,8 @@ class MainActivity : Activity() {
         }
         cloudChannels.forEach { channel ->
             val row = TextView(this).apply {
-                text = "▶  ${channel.name}"
-                textSize = 18f
+                text = "▶   ${channel.name}"
+                textSize = 19f
                 maxLines = 2
                 gravity = Gravity.CENTER_VERTICAL
                 setTextColor(Color.WHITE)
@@ -498,6 +505,7 @@ class MainActivity : Activity() {
         if (!isFullscreen) return
         if (isChannelDrawerOpen) closeFullscreenChannelDrawer() else {
             renderFullscreenChannelList()
+            retryHandler.removeCallbacks(fullscreenOverlayHideTask)
             isChannelDrawerOpen = true
             fullscreenChannelDrawer.visibility = View.VISIBLE
             fullscreenChannelsButton.visibility = View.GONE
@@ -513,14 +521,15 @@ class MainActivity : Activity() {
         isChannelDrawerOpen = false
         fullscreenChannelDrawer.visibility = View.GONE
         fullscreenChannelsButton.visibility = if (isFullscreen) View.VISIBLE else View.GONE
-        if (isFullscreen) fullscreenChannelsButton.requestFocus()
+        if (isFullscreen) showFullscreenOverlay(autoHide = true, requestFocus = true)
     }
 
     private fun channelFocusBackground(focused: Boolean): android.graphics.drawable.GradientDrawable =
         android.graphics.drawable.GradientDrawable().apply {
-            setColor(if (focused) Color.rgb(42, 65, 91) else Color.rgb(28, 45, 66))
-            cornerRadius = dp(10).toFloat()
+            setColor(if (focused) Color.rgb(37, 62, 91) else Color.rgb(22, 35, 54))
+            cornerRadius = dp(14).toFloat()
             if (focused) setStroke(dp(3), Color.rgb(255, 204, 64))
+            else setStroke(dp(1), Color.rgb(39, 57, 79))
         }
 
     private fun beginCloudPairing() {
@@ -657,6 +666,7 @@ class MainActivity : Activity() {
             playWhenReady = true
         }
         if (isTvDevice()) playerView.post { playerView.requestFocus() }
+        if (isFullscreen) showFullscreenOverlay(autoHide = true, requestFocus = false)
     }
 
     private fun isVisibleInHierarchy(view: View): Boolean {
@@ -666,6 +676,31 @@ class MainActivity : Activity() {
             current = current.parent as? View
         }
         return true
+    }
+
+    private fun showFullscreenOverlay(autoHide: Boolean = true, requestFocus: Boolean = false) {
+        if (!isFullscreen || isChannelDrawerOpen) return
+        fullscreenOverlayVisible = true
+        fullscreenButton.visibility = View.VISIBLE
+        fullscreenChannelsButton.visibility = View.VISIBLE
+        if (requestFocus && isTvDevice()) {
+            fullscreenChannelsButton.post {
+                if (isFullscreen && !isChannelDrawerOpen && fullscreenChannelsButton.visibility == View.VISIBLE) {
+                    fullscreenChannelsButton.requestFocus()
+                }
+            }
+        }
+        retryHandler.removeCallbacks(fullscreenOverlayHideTask)
+        if (autoHide) retryHandler.postDelayed(fullscreenOverlayHideTask, 5_000L)
+    }
+
+    private fun hideFullscreenOverlay() {
+        if (!isFullscreen || isChannelDrawerOpen) return
+        fullscreenOverlayVisible = false
+        val hadFocus = fullscreenButton.hasFocus() || fullscreenChannelsButton.hasFocus()
+        fullscreenButton.visibility = View.GONE
+        fullscreenChannelsButton.visibility = View.GONE
+        if (hadFocus && isTvDevice()) playerView.requestFocus()
     }
 
     private fun toggleFullscreen() {
@@ -700,11 +735,12 @@ class MainActivity : Activity() {
                 )
             fullscreenButton.text = "✕"
             fullscreenButton.contentDescription = "Esci da schermo intero"
-            fullscreenChannelsButton.visibility = View.VISIBLE
             isChannelDrawerOpen = false
             fullscreenChannelDrawer.visibility = View.GONE
-            if (isTvDevice()) fullscreenChannelsButton.post { fullscreenChannelsButton.requestFocus() }
+            showFullscreenOverlay(autoHide = true, requestFocus = isTvDevice())
         } else {
+            retryHandler.removeCallbacks(fullscreenOverlayHideTask)
+            fullscreenOverlayVisible = false
             isChannelDrawerOpen = false
             fullscreenChannelDrawer.visibility = View.GONE
             fullscreenChannelsButton.visibility = View.GONE
@@ -727,6 +763,7 @@ class MainActivity : Activity() {
             playerContainer.layoutParams = playerParams
             fullscreenButton.text = "⛶"
             fullscreenButton.contentDescription = "Attiva schermo intero"
+            fullscreenButton.visibility = View.VISIBLE
             if (isTvDevice()) {
                 val restore = focusBeforeFullscreen
                 focusBeforeFullscreen = null
@@ -757,12 +794,31 @@ class MainActivity : Activity() {
                         return true
                     }
                 }
-                android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
-                    player?.let { if (it.isPlaying) it.pause() else it.play() }
-                    return true
+            }
+
+            if (isFullscreen && !isChannelDrawerOpen) {
+                val overlayWasVisible = fullscreenOverlayVisible
+                showFullscreenOverlay(autoHide = true, requestFocus = !overlayWasVisible)
+                when (event.keyCode) {
+                    android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
+                        player?.let { if (it.isPlaying) it.pause() else it.play() }
+                        return true
+                    }
+                    android.view.KeyEvent.KEYCODE_MEDIA_PLAY -> { player?.play(); return true }
+                    android.view.KeyEvent.KEYCODE_MEDIA_PAUSE -> { player?.pause(); return true }
                 }
-                android.view.KeyEvent.KEYCODE_MEDIA_PLAY -> { player?.play(); return true }
-                android.view.KeyEvent.KEYCODE_MEDIA_PAUSE -> { player?.pause(); return true }
+                // Il primo tasto risveglia i comandi: non deve anche attivare
+                // accidentalmente il pulsante che riceve il focus.
+                if (!overlayWasVisible) return true
+            } else {
+                when (event.keyCode) {
+                    android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
+                        player?.let { if (it.isPlaying) it.pause() else it.play() }
+                        return true
+                    }
+                    android.view.KeyEvent.KEYCODE_MEDIA_PLAY -> { player?.play(); return true }
+                    android.view.KeyEvent.KEYCODE_MEDIA_PAUSE -> { player?.pause(); return true }
+                }
             }
         }
         return super.dispatchKeyEvent(event)
