@@ -60,8 +60,8 @@ class MainActivity : Activity() {
         override fun run() {
             val current = player
             if (current == null || !::diagnosticsView.isInitialized || isFinishing || isDestroyed) return
-            if (!PlayerCloudSync.hasValidLease(this) && current.mediaItemCount > 0) {
-                PlayerCloudSync.clearAuthorization(this)
+            if (!PlayerCloudSync.hasValidLease(this@MainActivity) && current.mediaItemCount > 0) {
+                PlayerCloudSync.clearAuthorization(this@MainActivity)
                 stopPlaybackForAuthorization()
                 cloudChannels.clear()
                 renderCloudChannels()
@@ -69,7 +69,7 @@ class MainActivity : Activity() {
                 return
             }
             val now = System.currentTimeMillis()
-            if (PlayerCloudSync.hasValidLease(this) && now - lastAuthorizationCheckAt >= 6 * 60 * 60 * 1000L) {
+            if (PlayerCloudSync.hasValidLease(this@MainActivity) && now - lastAuthorizationCheckAt >= 6 * 60 * 60 * 1000L) {
                 lastAuthorizationCheckAt = now
                 syncCloudAtStartup()
             }
