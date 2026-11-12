@@ -73,6 +73,13 @@ assert.match(lite, /PlayerCloudSync\.activate\(this, code\)/, 'Player Lite must 
 assert.match(lite, /PlayerCloudSync\.hasValidLease\(this\)/, 'Player Lite must enforce its offline authorization lease');
 assert.match(lite, /PlayerCloudSync\.clearAuthorization\(this\)/, 'Player Lite must clear local authorization after revocation');
 assert.doesNotMatch(lite, /PlayerCloudSync\.pairingStatus|startPairing\(this\)/, 'legacy pairing flow must be removed');
+assert.match(lite, /hint = "Codice monouso generato da Admin"/, 'Player Lite activation must request an Admin-generated one-time code');
+assert.match(lite, /Nessun canale visibile\. Inserisci il codice monouso fornito da Admin/, 'locked empty state must refer to Admin');
+assert.match(lite, /Accesso bloccato: inserisci un codice monouso generato da Admin/, 'locked status must refer to Admin');
+assert.match(lite, /setOnEditorActionListener[\s\S]*?beginCloudPairing\(\)/, 'activation code must submit from the TV keyboard without a visible button');
+assert.doesNotMatch(lite, /controls\.addView\(cloudHeaderView\)|controls\.addView\(endpointInput|controls\.addView\(pairButton/, 'Player Lite must not expose Cloud URL or activation button');
+assert.match(lite, /diagnosticsView\.visibility = View\.GONE/, 'HLS diagnostics must stay hidden until device activation');
+
 
 assert.match(lite, /override fun dispatchKeyEvent\(event: (?:android\.view\.)?KeyEvent\): Boolean/, 'Player Lite must handle Android TV remote key events');
 assert.match(lite, /KEYCODE_MENU,[\s\S]*KEYCODE_GUIDE/, 'Menu and Guide keys must open the fullscreen channel list');
