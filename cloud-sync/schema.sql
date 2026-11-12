@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS devices (
   device_id TEXT PRIMARY KEY,
   install_id TEXT NOT NULL,
   device_name TEXT NOT NULL,
+  display_name TEXT,
   platform TEXT NOT NULL,
   token_hash TEXT NOT NULL,
   status TEXT NOT NULL CHECK (status IN ('pending', 'approved', 'revoked', 'expired')),
@@ -11,13 +12,24 @@ CREATE TABLE IF NOT EXISTS devices (
   created_at INTEGER NOT NULL,
   expires_at INTEGER NOT NULL,
   approved_at INTEGER,
-  last_seen_at INTEGER
+  activated_at INTEGER,
+  revoked_at INTEGER,
+  last_seen_at INTEGER,
+  lease_expires_at INTEGER
 );
 
-CREATE INDEX IF NOT EXISTS idx_devices_pairing_code
-  ON devices(pairing_code, status, expires_at);
-CREATE INDEX IF NOT EXISTS idx_devices_token_hash
-  ON devices(token_hash, status);
+CREATE INDEX IF NOT EXISTS idx_devices_pairing_code ON devices(pairing_code, status, expires_at);
+CREATE INDEX IF NOT EXISTS idx_devices_token_hash ON devices(token_hash, status);
+CREATE INDEX IF NOT EXISTS idx_devices_install_id ON devices(install_id);
+
+CREATE TABLE IF NOT EXISTS activation_codes (
+  code_hash TEXT PRIMARY KEY,
+  created_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL,
+  consumed_at INTEGER,
+  consumed_install_id TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_activation_codes_expiry ON activation_codes(expires_at, consumed_at);
 
 CREATE TABLE IF NOT EXISTS config (
   config_id INTEGER PRIMARY KEY CHECK (config_id = 1),
@@ -33,6 +45,4 @@ CREATE TABLE IF NOT EXISTS pair_attempts (
   ip_hash TEXT NOT NULL,
   created_at INTEGER NOT NULL
 );
-
-CREATE INDEX IF NOT EXISTS idx_pair_attempts_ip_time
-  ON pair_attempts(ip_hash, created_at);
+CREATE INDEX IF NOT EXISTS idx_pair_attempts_ip_time ON pair_attempts(ip_hash, created_at);
