@@ -61,11 +61,17 @@ class MainActivity : Activity() {
             val current = player
             if (current == null || !::diagnosticsView.isInitialized || isFinishing || isDestroyed) return
             if (!PlayerCloudSync.hasValidLease(this) && current.mediaItemCount > 0) {
+                PlayerCloudSync.clearAuthorization(this)
                 stopPlaybackForAuthorization()
                 cloudChannels.clear()
                 renderCloudChannels()
                 cloudStatusView.text = "Licenza offline scaduta. Riconnetti e attiva nuovamente il dispositivo."
                 return
+            }
+            val now = System.currentTimeMillis()
+            if (PlayerCloudSync.hasValidLease(this) && now - lastAuthorizationCheckAt >= 6 * 60 * 60 * 1000L) {
+                lastAuthorizationCheckAt = now
+                syncCloudAtStartup()
             }
             val aheadMs = (current.bufferedPosition - current.currentPosition).coerceAtLeast(0L)
             val state = when (current.playbackState) {
@@ -97,7 +103,7 @@ class MainActivity : Activity() {
     private val cloudHandler = Handler(Looper.getMainLooper())
     private val cloudExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
     private val cloudChannels = mutableListOf<CloudChannel>()
-    private var pairingPollId: String? = null
+    private var lastAuthorizationCheckAt = 0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -543,7 +549,9 @@ class MainActivity : Activity() {
     }
 
     private fun syncCloudAtStartup() {
+        lastAuthorizationCheckAt = System.currentTimeMillis()
         if (!PlayerCloudSync.hasValidLease(this)) {
+            PlayerCloudSync.clearAuthorization(this)
             cloudChannels.clear()
             renderCloudChannels()
             stopPlaybackForAuthorization()
