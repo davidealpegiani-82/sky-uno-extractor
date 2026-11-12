@@ -44,7 +44,7 @@ assert.match(template, /function ensureHlsLoading\(\)/, 'a periodic watchdog mus
 assert.match(template, /fragmentLoading\|\|levelLoading\)return/, 'do not kick HLS while a fragment or level request is active');
 assert.match(template, /Math.min\(1000\*Math.pow\(2,Math.min\(attempt-1,2\)\),4000\)/, 'network recovery must retry indefinitely with capped backoff');
 assert.doesNotMatch(template, /networkRetryCount>=retryDelays.length/, 'network recovery must not permanently stop after a fixed retry count');
-assert.match(template, /setInterval\(\(\)=>\{ensureHlsLoading\(\);checkBufferPolicy\(\)\},1500\)/, 'loader and buffer watchdogs must run every 1.5 seconds');
+assert.match(template, /setInterval\(\(\)=>\{[\s\S]*?ensureHlsLoading\(\);checkBufferPolicy\(\)\},1500\)/, 'loader, buffer and authorization watchdogs must run every 1.5 seconds');
 assert.match(template, /function recoverNetwork\(reason\)/, 'fatal HLS network errors must have a dedicated recovery path');
 assert.match(template, /hls\.startLoad\(-1\)/, 'network recovery must restart HLS loading without recreating the player');
 assert.match(template, /networkRetryCount=0;recovering=false;checkBufferPolicy\(\)/, 'successful buffered fragments must clear the network recovery state');
