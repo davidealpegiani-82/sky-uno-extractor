@@ -268,7 +268,7 @@ async function route(request: Request, env: Env): Promise<Response> {
     let body: any;
     try { body = await readJson(request, 8_192); } catch { return response({ error: "invalid_json" }, 400); }
     const deviceId = typeof body.deviceId === "string" ? body.deviceId.trim() : "";
-    const displayName = typeof body.displayName === "string" ? body.displayName.trim().replace(/\\s+/g, " ").slice(0, 60) : "";
+    const displayName = typeof body.displayName === "string" ? body.displayName.trim().replace(/\s+/g, " ").slice(0, 60) : "";
     if (!deviceId || !displayName) return response({ error: "invalid_device_name" }, 400);
     const result = await env.DB.prepare(
       "UPDATE devices SET display_name = ? WHERE device_id = ? AND status IN ('approved', 'revoked')"
