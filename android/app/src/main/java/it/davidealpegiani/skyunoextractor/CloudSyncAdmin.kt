@@ -98,18 +98,14 @@ internal object CloudSyncAdmin {
         return adminRequest(context, "POST", "/v1/admin/config/publish", payload)
     }
 
-    fun createActivationCode(context: Context): JSONObject =
-        adminRequest(context, "POST", "/v2/admin/activation-codes", JSONObject())
+    fun approve(context: Context, code: String): JSONObject =
+        adminRequest(context, "POST", "/v1/admin/pair/approve", JSONObject().put("code", code))
 
-    fun devices(context: Context): JSONArray =
-        adminRequest(context, "GET", "/v1/admin/devices", null).optJSONArray("devices") ?: JSONArray()
+    fun devices(context: Context): JSONObject =
+        adminRequest(context, "GET", "/v1/admin/devices", null)
 
     fun revoke(context: Context, deviceId: String): JSONObject =
         adminRequest(context, "POST", "/v1/admin/devices/revoke", JSONObject().put("deviceId", deviceId))
-
-    fun rename(context: Context, deviceId: String, displayName: String): JSONObject =
-        adminRequest(context, "POST", "/v2/admin/devices/rename",
-            JSONObject().put("deviceId", deviceId).put("displayName", displayName))
 
     private fun adminRequest(
         context: Context,
