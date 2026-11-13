@@ -6,7 +6,7 @@
 
     <application
         android:allowBackup="false"
-        android:label="Sky Player Lite"
+        android:label="DAVIX Player"
         android:icon="@drawable/ic_playerlite_launcher"
         android:roundIcon="@drawable/ic_playerlite_launcher"
         android:theme="@android:style/Theme.Material.NoActionBar"
