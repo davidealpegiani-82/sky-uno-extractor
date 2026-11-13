@@ -145,7 +145,13 @@ internal object CloudSyncAdmin {
                 JSONObject().put("error", "Risposta non valida dal servizio (HTTP $code).")
             }
             if (code !in 200..299) {
-                throw IllegalStateException(result.optString("error").ifBlank { "Errore HTTP $code" })
+                val message = when (code) {
+                    401, 403 -> "Chiave amministratore non valida o non autorizzata. Controlla la chiave salvata in DAVIX Extractor."
+                    404 -> "Endpoint Cloud Sync non trovato. Verifica l'indirizzo del Worker."
+                    in 500..599 -> "Il Worker DAVIX Cloud Sync ha restituito un errore interno (HTTP $code). Riprova più tardi."
+                    else -> result.optString("error").ifBlank { "Richiesta Cloud Sync rifiutata (HTTP $code)." }
+                }
+                throw IllegalStateException(message)
             }
             return result
         } finally {
