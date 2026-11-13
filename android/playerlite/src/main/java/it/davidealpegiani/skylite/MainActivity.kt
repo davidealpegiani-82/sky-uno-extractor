@@ -566,7 +566,7 @@ class MainActivity : Activity() {
             text = channel.name
             setTextColor(Color.rgb(241, 245, 249))
             textSize = if (isTvDevice()) 19f else 15f
-            setTypeface(null, if (selected) android.graphics.Typeface.BOLD else android.graphics.Typeface.MEDIUM)
+            setTypeface(null, if (selected) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
         }
