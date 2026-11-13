@@ -110,6 +110,8 @@ class MainActivity : Activity() {
     private val cloudExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
     private val cloudChannels = mutableListOf<CloudChannel>()
     private var lastAuthorizationCheckAt = 0L
+    private var lastChannelClickName: String? = null
+    private var lastChannelClickAt = 0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -500,7 +502,7 @@ class MainActivity : Activity() {
                 isFocusableInTouchMode = !isTvDevice()
                 background = channelFocusBackground(false)
                 setOnFocusChangeListener { _, focused -> background = channelFocusBackground(focused) }
-                setOnClickListener { playCloudChannel(channel) }
+                setOnClickListener { onCloudChannelClicked(channel) }
             }
             channelsList.addView(item, LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
@@ -691,6 +693,23 @@ class MainActivity : Activity() {
         statusView.text = "Attivazione richiesta"
         diagnosticsView.visibility = View.GONE
         channelsHeaderView.visibility = View.GONE
+    }
+
+    // Un secondo click/OK sullo stesso canale entro 450 ms apre il video a schermo intero.
+    // Il primo click avvia subito la riproduzione; il secondo non riavvia il flusso.
+    private fun onCloudChannelClicked(channel: CloudChannel) {
+        val now = System.currentTimeMillis()
+        val isDoubleClick = lastChannelClickName == channel.name &&
+            now - lastChannelClickAt in 0..450L
+        lastChannelClickName = null
+        lastChannelClickAt = 0L
+        if (isDoubleClick) {
+            if (!isFullscreen) toggleFullscreen()
+            return
+        }
+        lastChannelClickName = channel.name
+        lastChannelClickAt = now
+        playCloudChannel(channel)
     }
 
     private fun playCloudChannel(channel: CloudChannel) {
