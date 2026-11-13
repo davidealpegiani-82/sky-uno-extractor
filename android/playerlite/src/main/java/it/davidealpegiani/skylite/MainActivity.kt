@@ -921,8 +921,17 @@ class MainActivity : Activity() {
             .setPrioritizeTimeOverSizeThresholds(true)
             .build()
 
+        // Allinea le richieste HLS al profilo HTTP del browser Android:
+        // alcuni server rifiutano (403) User-Agent applicativi non riconosciuti.
+        // WebSettings fornisce lo User-Agent effettivo del WebView installato,
+        // senza inventare una versione di Chrome. Il fallback mantiene la compatibilità.
+        val browserUserAgent = runCatching {
+            android.webkit.WebSettings.getDefaultUserAgent(this)
+        }.getOrDefault("Mozilla/5.0 (Linux; Android) AppleWebKit/537.36 (KHTML, like Gecko) Chrome Safari/537.36")
+
         val httpFactory = DefaultHttpDataSource.Factory()
-            .setUserAgent("DAVIXPlayer/1.0 (Android)")
+            .setUserAgent(browserUserAgent)
+            .setDefaultRequestProperties(mapOf("Accept" to "*/*"))
             .setConnectTimeoutMs(15_000)
             .setReadTimeoutMs(45_000)
             .setAllowCrossProtocolRedirects(true)
