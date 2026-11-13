@@ -1080,7 +1080,7 @@ class MainActivity : FragmentActivity() {
         if (chosen.isEmpty()) { toast("Seleziona almeno un canale."); return }
         AlertDialog.Builder(this)
             .setTitle("Preparare il Player HTML?")
-            .setMessage("Per proteggere i canali, il file HTML non conterrà indirizzi o nomi della playlist. La selezione verrà pubblicata su Sky Cloud Sync e sarà visibile solo dopo l'attivazione con un codice monouso.")
+            .setMessage("Per proteggere i canali, il file HTML non conterrà indirizzi o nomi della playlist. La selezione verrà pubblicata su DAVIX Cloud Sync e sarà visibile solo dopo l'attivazione con un codice monouso.")
             .setNegativeButton("Annulla", null)
             .setPositiveButton("Pubblica ed esporta") { _, _ ->
                 val payload = JSONArray()
