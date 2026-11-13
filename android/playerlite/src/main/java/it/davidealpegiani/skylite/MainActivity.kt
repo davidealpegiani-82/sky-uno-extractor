@@ -530,7 +530,7 @@ class MainActivity : Activity() {
         fullscreenChannelList.removeAllViews()
         if (cloudChannels.isEmpty()) {
             fullscreenChannelList.addView(TextView(this).apply {
-                text = "Nessun canale disponibile nell'elenco locale.\n\nPer visualizzare qui la playlist completa, associa il Player a Sky Cloud Sync oppure aggiorna la lista sincronizzata."
+                text = "Nessun canale disponibile nell'elenco locale.\n\nPer visualizzare qui la playlist completa, associa il Player a DAVIX Cloud Sync oppure aggiorna la lista sincronizzata."
                 setTextColor(Color.rgb(210, 220, 232))
                 textSize = 17f
                 setPadding(dp(16), dp(20), dp(16), dp(20))
@@ -637,7 +637,7 @@ class MainActivity : Activity() {
             cloudStatusView.text = "Accesso bloccato: inserisci un codice monouso generato da Admin"
             return
         }
-        cloudStatusView.text = "Controllo aggiornamenti Sky Cloud Sync…"
+        cloudStatusView.text = "Controllo aggiornamenti DAVIX Cloud Sync…"
         cloudExecutor.execute {
             try {
                 val result = PlayerCloudSync.sync(this)
