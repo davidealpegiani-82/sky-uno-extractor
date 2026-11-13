@@ -48,6 +48,7 @@ import androidx.media3.ui.PlayerView
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedReader
+import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
@@ -807,7 +808,7 @@ class MainActivity : FragmentActivity() {
         var invalid = 0
         uris.forEach { uri ->
             try {
-                val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: ByteArray(0)
+                val bytes = readImportBytes(uri)
                 val text = String(bytes, StandardCharsets.UTF_8)
                 val displayName = queryDisplayName(uri)
                 val found = parseChannels(text)
@@ -935,6 +936,28 @@ class MainActivity : FragmentActivity() {
             .show()
     }
 
+    // Evita di caricare file arbitrariamente grandi in memoria durante l'importazione.
+    private fun readImportBytes(uri: Uri): ByteArray {
+        val maxBytes = 64L * 1024L * 1024L
+        val input = contentResolver.openInputStream(uri)
+            ?: throw IOException("Impossibile aprire il file selezionato.")
+        input.use { stream ->
+            val output = ByteArrayOutputStream()
+            val buffer = ByteArray(16 * 1024)
+            var total = 0L
+            while (true) {
+                val count = stream.read(buffer)
+                if (count < 0) break
+                total += count
+                if (total > maxBytes) {
+                    throw IOException("Il file supera il limite di importazione di 64 MB.")
+                }
+                output.write(buffer, 0, count)
+            }
+            return output.toByteArray()
+        }
+    }
+
     private fun parseChannels(text: String): List<TvChannel> {
         val found = mutableListOf<TvChannel>()
         val seen = mutableSetOf<String>()
@@ -963,6 +986,16 @@ class MainActivity : FragmentActivity() {
             }
             return null
         }
+        // Parser HTML essenziale per link diretti a flussi: mantiene il testo del link come nome.
+        val htmlLinks = Regex("(?is)<a\\b[^>]*href\\s*=\\s*[\"'](https?://[^\"']+)[\"'][^>]*>(.*?)</a>")
+        htmlLinks.findAll(text).forEach { match ->
+            val label = android.text.Html.fromHtml(
+                match.groupValues[2].replace(Regex("<[^>]+>"), " "),
+                android.text.Html.FROM_HTML_MODE_LEGACY
+            ).toString().trim()
+            add(label, match.groupValues[1])
+        }
+
         val objects = Regex("\\{[^{}]{0,4000}\\}").findAll(text)
         objects.forEach { m ->
             val obj = m.value
@@ -975,9 +1008,12 @@ class MainActivity : FragmentActivity() {
 
         try {
             val trimmed = text.trim()
+            val rootObject = if (trimmed.startsWith("{")) JSONObject(trimmed) else null
             val array = when {
                 trimmed.startsWith("[") -> JSONArray(trimmed)
-                trimmed.startsWith("{") -> JSONObject(trimmed).optJSONArray("channels")
+                rootObject != null -> rootObject.optJSONArray("channels")
+                    ?: rootObject.optJSONArray("items")
+                    ?: rootObject.optJSONArray("data")
                 else -> null
             }
             if (array != null) for (i in 0 until array.length()) {
