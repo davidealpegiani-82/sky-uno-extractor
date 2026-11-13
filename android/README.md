@@ -73,7 +73,7 @@ Il backend è pubblicato all'indirizzo `https://sky-cloud-sync.davide-alpegiani.
 4. Sul Player o nell'HTML esportato avviare **Collega Player** e comunicare il codice temporaneo a Extractor.
 5. In Extractor scegliere **Autorizza Player** e inserire il codice. Dopo l'approvazione, il Player scarica la lista e conserva una copia locale.
 
-Le build Android aggiornate vengono pubblicate dal workflow **Build DAVIX Extractor and Player APKs**. Il link stabile di Player è `https://github.com/davidealpegiani-82/sky-uno-extractor/releases/download/player-lite-latest/Sky-Player-Lite.apk`.
+Le build Android aggiornate vengono pubblicate dal workflow **Build DAVIX Android APKs**. Il link stabile di Player è `https://github.com/davidealpegiani-82/sky-uno-extractor/releases/download/player-lite-latest/DAVIX-Player.apk`.
 
 Se Cloud Sync non è raggiungibile, Player e HTML mantengono la configurazione locale già salvata.
 
