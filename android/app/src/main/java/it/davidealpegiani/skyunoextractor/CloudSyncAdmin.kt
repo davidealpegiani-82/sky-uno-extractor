@@ -119,8 +119,8 @@ internal object CloudSyncAdmin {
     ): JSONObject {
         val base = baseUrl(context)
         val key = CloudSyncSecretStore.read(context)
-        require(base.startsWith("https://", true)) { "Configura prima l'indirizzo HTTPS di Sky Cloud Sync." }
-        require(!key.isNullOrBlank()) { "Configura prima la chiave amministratore di Sky Cloud Sync." }
+        require(base.startsWith("https://", true)) { "Configura prima l'indirizzo HTTPS di DAVIX Cloud Sync." }
+        require(!key.isNullOrBlank()) { "Configura prima la chiave amministratore di DAVIX Cloud Sync." }
         val connection = (URL(base + path).openConnection() as HttpURLConnection).apply {
             requestMethod = method
             connectTimeout = 15_000

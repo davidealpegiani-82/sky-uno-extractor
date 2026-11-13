@@ -1,4 +1,4 @@
-# Sky Cloud Sync
+# DAVIX Cloud Sync
 
 Backend Cloudflare Worker + D1 per la distribuzione autorizzata delle configurazioni di canali. Il servizio non inoltra i flussi video.
 

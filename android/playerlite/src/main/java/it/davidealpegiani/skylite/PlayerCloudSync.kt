@@ -124,7 +124,7 @@ internal object PlayerCloudSync {
         authenticated: Boolean
     ): JSONObject {
         val base = baseUrl(context)
-        require(base.startsWith("https://", true)) { "Configura prima l'indirizzo HTTPS di Sky Cloud Sync." }
+        require(base.startsWith("https://", true)) { "Configura prima l'indirizzo HTTPS di DAVIX Cloud Sync." }
         val token = if (authenticated) readToken(context) else null
         if (authenticated) require(!token.isNullOrBlank()) { "Questo Player non è ancora associato." }
         val connection = (URL(base + path).openConnection() as HttpURLConnection).apply {

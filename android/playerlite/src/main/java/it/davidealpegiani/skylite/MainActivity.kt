@@ -683,7 +683,7 @@ class MainActivity : Activity() {
     private fun stopPlaybackForAuthorization() {
         retryTask?.let { retryHandler.removeCallbacks(it) }
         player?.apply { stop(); clearMediaItems() }
-        titleView.text = "SKY PLAYER LITE"
+        titleView.text = "DAVIX PLAYER"
         statusView.text = "Attivazione richiesta"
         diagnosticsView.visibility = View.GONE
         channelsHeaderView.visibility = View.GONE
