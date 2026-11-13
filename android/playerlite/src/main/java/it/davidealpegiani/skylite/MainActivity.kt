@@ -102,6 +102,7 @@ class MainActivity : Activity() {
     private lateinit var channelScroll: ScrollView
     private lateinit var playerContainer: FrameLayout
     private lateinit var controlsPanel: LinearLayout
+    private lateinit var topBar: LinearLayout
     private lateinit var cloudHeaderView: TextView
     private lateinit var channelsHeaderView: TextView
     private val cloudHandler = Handler(Looper.getMainLooper())
@@ -125,39 +126,96 @@ class MainActivity : Activity() {
     private fun buildScreen() {
         val tvMode = isTvDevice()
         val root = LinearLayout(this).apply {
-            orientation = if (tvMode) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
-            setBackgroundColor(Color.rgb(5, 9, 17))
+            orientation = LinearLayout.VERTICAL
+            background = android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.TL_BR, intArrayOf(Color.rgb(5, 10, 22), Color.rgb(12, 20, 38), Color.rgb(5, 9, 18)))
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
             )
             descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
         }
+        if (tvMode) {
+            topBar = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(30), dp(10), dp(30), dp(10))
+                background = android.graphics.drawable.GradientDrawable(
+                    android.graphics.drawable.GradientDrawable.Orientation.LEFT_RIGHT,
+                    intArrayOf(Color.rgb(12, 25, 46), Color.rgb(7, 14, 28))
+                ).apply { setStroke(dp(1), Color.rgb(35, 69, 101)) }
+            }
+            val brandStack = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_VERTICAL }
+            val brand = TextView(this).apply {
+                text = android.text.SpannableString("SKY  PLAYER").apply {
+                    setSpan(android.text.style.ForegroundColorSpan(Color.rgb(69, 220, 255)), 0, 3, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                }
+                setTextColor(Color.WHITE)
+                textSize = 23f
+                setTypeface(null, android.graphics.Typeface.BOLD)
+                letterSpacing = 0.12f
+            }
+            val strapline = TextView(this).apply {
+                text = "ENTERTAINMENT  •  LIVE STREAMING"
+                setTextColor(Color.rgb(122, 164, 194))
+                textSize = 10f
+                letterSpacing = 0.18f
+            }
+            brandStack.addView(brand)
+            brandStack.addView(strapline)
+            topBar.addView(brandStack, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
+            val livePill = TextView(this).apply {
+                text = "●  LIVE"
+                setTextColor(Color.rgb(112, 245, 202))
+                textSize = 13f
+                setTypeface(null, android.graphics.Typeface.BOLD)
+                letterSpacing = 0.10f
+                gravity = Gravity.CENTER
+                setPadding(dp(20), dp(11), dp(20), dp(11))
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    setColor(Color.rgb(13, 54, 57))
+                    cornerRadius = dp(24).toFloat()
+                    setStroke(dp(1), Color.rgb(42, 145, 135))
+                }
+            }
+            topBar.addView(livePill, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(46)))
+            root.addView(topBar, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(82)))
+        }
+        val tvContent = if (tvMode) LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            background = android.graphics.drawable.GradientDrawable(
+                android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.rgb(5, 10, 22), Color.rgb(9, 18, 34))
+            )
+        } else root
+        if (tvMode) root.addView(tvContent, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         val controls = if (tvMode) LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(18), dp(20), dp(18))
-            setBackgroundColor(Color.rgb(13, 22, 37))
+            setPadding(dp(26), dp(24), dp(26), dp(24))
+            background = android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(Color.rgb(17, 29, 52), Color.rgb(9, 17, 32))).apply { setStroke(dp(1), Color.rgb(38, 65, 98)) }
             descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
         } else root
         controlsPanel = controls
         if (tvMode) {
-            root.addView(controls, LinearLayout.LayoutParams(dp(380), ViewGroup.LayoutParams.MATCH_PARENT))
+            tvContent.addView(controls, LinearLayout.LayoutParams(dp(420), ViewGroup.LayoutParams.MATCH_PARENT))
         }
         titleView = TextView(this).apply {
-            text = "SKY PLAYER  LITE"
+            text = android.text.SpannableString("SKY  PLAYER LITE").apply {
+                setSpan(android.text.style.ForegroundColorSpan(Color.rgb(69, 220, 255)), 0, 3, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                setSpan(android.text.style.RelativeSizeSpan(1.08f), 0, 3, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
             setTextColor(Color.WHITE)
-            textSize = if (tvMode) 27f else 19f
+            textSize = if (tvMode) 31f else 21f
             setTypeface(null, android.graphics.Typeface.BOLD)
-            letterSpacing = 0.06f
+            letterSpacing = 0.10f
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(12), dp(22), dp(12), dp(8))
+            setPadding(dp(12), dp(26), dp(12), dp(10))
         }
         statusView = TextView(this).apply {
-            text = if (tvMode) "INTRATTENIMENTO IN DIRETTA" else "Apri un canale da Sky Player HTML."
-            setTextColor(Color.rgb(143, 164, 190))
-            textSize = if (tvMode) 12f else 13f
-            letterSpacing = if (tvMode) 0.12f else 0f
-            setPadding(dp(12), 0, dp(12), dp(18))
+            text = if (tvMode) "LIVE TELEVISION  •  BIG SCREEN EXPERIENCE" else "Apri un canale da Sky Player HTML."
+            setTextColor(Color.rgb(135, 177, 205))
+            textSize = if (tvMode) 11f else 13f
+            letterSpacing = if (tvMode) 0.16f else 0f
+            setPadding(dp(12), 0, dp(12), dp(22))
         }
         playerView = PlayerView(this).apply {
             isFocusable = tvMode
@@ -178,8 +236,9 @@ class MainActivity : Activity() {
         diagnosticsView = TextView(this).apply {
             text = "HLS: in attesa · buffer 0s"
             setTextColor(Color.rgb(112, 196, 220))
-            textSize = if (tvMode) 12f else 11f
-            setPadding(dp(12), 0, dp(12), dp(8))
+            textSize = if (tvMode) 13f else 11f
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            background = android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(Color.rgb(15, 46, 65), Color.rgb(18, 32, 54))).apply { cornerRadius = dp(14).toFloat(); setStroke(dp(1), Color.rgb(36, 111, 145)) }
         }
         controls.addView(diagnosticsView)
         diagnosticsView.visibility = if (PlayerCloudSync.hasValidLease(this)) View.VISIBLE else View.GONE
@@ -259,7 +318,7 @@ class MainActivity : Activity() {
             textSize = if (tvMode) 16f else 13f
             setTypeface(null, android.graphics.Typeface.BOLD)
             letterSpacing = 0.08f
-            setPadding(dp(12), dp(22), dp(12), dp(12))
+            setPadding(dp(12), dp(26), dp(12), dp(14))
             contentDescription = "Elenco canali. Usa le frecce per scegliere e OK per riprodurre."
         }
         controls.addView(channelsHeaderView)
@@ -271,13 +330,13 @@ class MainActivity : Activity() {
             } else {
                 LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f)
             }
-            setBackgroundColor(Color.BLACK)
+            background = android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.TL_BR, intArrayOf(Color.rgb(0, 0, 0), Color.rgb(7, 18, 34))).apply { setStroke(dp(2), Color.rgb(28, 76, 112)) }
         }
         playerContainer.addView(playerView)
         fullscreenButton = TextView(this).apply {
-            text = "⛶"
+            text = "⛶  SCHERMO INTERO"
             contentDescription = "Attiva schermo intero"
-            textSize = 28f
+            textSize = 15f
             gravity = Gravity.CENTER
             setTextColor(Color.WHITE)
             setBackground(channelActionBackground())
@@ -296,7 +355,7 @@ class MainActivity : Activity() {
         playerContainer.addView(fullscreenButton)
 
         fullscreenChannelsButton = TextView(this).apply {
-            text = "☰  CANALI"
+            text = "☷  GUIDA CANALI"
             contentDescription = "Apri elenco canali"
             textSize = 16f
             gravity = Gravity.CENTER
@@ -316,12 +375,12 @@ class MainActivity : Activity() {
 
         fullscreenChannelDrawer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.rgb(8, 15, 27))
-            elevation = dp(18).toFloat()
+            background = android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(Color.rgb(13, 26, 48), Color.rgb(7, 14, 27))).apply { setStroke(dp(1), Color.rgb(47, 102, 139)) }
+            elevation = dp(24).toFloat()
             visibility = View.GONE
             isFocusable = true
             descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
-            layoutParams = FrameLayout.LayoutParams(dp(360), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.START)
+            layoutParams = FrameLayout.LayoutParams(dp(420), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.START)
         }
         val drawerHeader = TextView(this).apply {
             text = "  CANALI  ·  SELEZIONA"
@@ -351,7 +410,7 @@ class MainActivity : Activity() {
         fullscreenChannelDrawer.addView(drawerScroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         playerContainer.addView(fullscreenChannelDrawer)
         renderFullscreenChannelList()
-        root.addView(playerContainer)
+        if (tvMode) tvContent.addView(playerContainer) else root.addView(playerContainer)
         channelScroll = ScrollView(this).apply {
             isFillViewport = true
             isFocusable = false
@@ -360,7 +419,7 @@ class MainActivity : Activity() {
             } else {
                 LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(220))
             }
-            setBackgroundColor(Color.rgb(8, 13, 22))
+            background = android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(Color.rgb(8, 17, 32), Color.rgb(5, 11, 22)))
         }
         channelsList = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -430,9 +489,9 @@ class MainActivity : Activity() {
                 textSize = if (isTvDevice()) 19f else 15f
                 includeFontPadding = true
                 setLineSpacing(dp(2).toFloat(), 1.0f)
-                setTextColor(Color.rgb(238, 243, 250))
-                setPadding(dp(20), if (isTvDevice()) dp(22) else dp(12), dp(18), if (isTvDevice()) dp(22) else dp(12))
-                minHeight = if (isTvDevice()) dp(72) else dp(48)
+                setTextColor(Color.rgb(244, 249, 255))
+                setPadding(dp(22), if (isTvDevice()) dp(25) else dp(12), dp(20), if (isTvDevice()) dp(25) else dp(12))
+                minHeight = if (isTvDevice()) dp(86) else dp(52)
                 isFocusable = true
                 isFocusableInTouchMode = !isTvDevice()
                 background = channelFocusBackground(false)
@@ -461,9 +520,9 @@ class MainActivity : Activity() {
 
     private fun channelActionBackground(focused: Boolean = false): android.graphics.drawable.GradientDrawable =
         android.graphics.drawable.GradientDrawable().apply {
-            setColor(if (focused) Color.rgb(48, 76, 108) else Color.rgb(28, 45, 66))
-            cornerRadius = dp(10).toFloat()
-            if (focused) setStroke(dp(3), Color.rgb(255, 204, 64))
+            setColor(if (focused) Color.rgb(18, 79, 105) else Color.rgb(20, 37, 61))
+            cornerRadius = dp(16).toFloat()
+            if (focused) setStroke(dp(3), Color.rgb(69, 220, 255)) else setStroke(dp(1), Color.rgb(48, 86, 121))
         }
 
     private fun renderFullscreenChannelList() {
@@ -526,10 +585,10 @@ class MainActivity : Activity() {
 
     private fun channelFocusBackground(focused: Boolean): android.graphics.drawable.GradientDrawable =
         android.graphics.drawable.GradientDrawable().apply {
-            setColor(if (focused) Color.rgb(37, 62, 91) else Color.rgb(22, 35, 54))
-            cornerRadius = dp(14).toFloat()
-            if (focused) setStroke(dp(3), Color.rgb(255, 204, 64))
-            else setStroke(dp(1), Color.rgb(39, 57, 79))
+            setColor(if (focused) Color.rgb(17, 68, 91) else Color.rgb(18, 31, 52))
+            cornerRadius = dp(18).toFloat()
+            if (focused) setStroke(dp(3), Color.rgb(69, 220, 255))
+            else setStroke(dp(1), Color.rgb(42, 69, 99))
         }
 
     private fun beginCloudPairing() {
@@ -712,7 +771,7 @@ class MainActivity : Activity() {
         if (isFullscreen) {
             // Nasconde tutta l'interfaccia attorno al video e assegna al player
             // l'intera superficie disponibile della finestra.
-            if (isTvDevice()) controlsPanel.visibility = View.GONE
+            if (isTvDevice()) { controlsPanel.visibility = View.GONE; topBar.visibility = View.GONE }
             titleView.visibility = View.GONE
             statusView.visibility = View.GONE
             diagnosticsView.visibility = View.GONE
@@ -745,7 +804,7 @@ class MainActivity : Activity() {
             fullscreenChannelDrawer.visibility = View.GONE
             fullscreenChannelsButton.visibility = View.GONE
             decor.systemUiVisibility = View.SYSTEM_UI_FLAG_VISIBLE
-            if (isTvDevice()) controlsPanel.visibility = View.VISIBLE
+            if (isTvDevice()) { controlsPanel.visibility = View.VISIBLE; topBar.visibility = View.VISIBLE }
             titleView.visibility = View.VISIBLE
             statusView.visibility = View.VISIBLE
             diagnosticsView.visibility = if (PlayerCloudSync.hasValidLease(this)) View.VISIBLE else View.GONE
@@ -837,10 +896,10 @@ class MainActivity : Activity() {
     private fun initializePlayer() {
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                30_000,
-                90_000,
-                6_000,
-                15_000
+                40_000,
+                120_000,
+                12_000,
+                40_000
             )
             .setPrioritizeTimeOverSizeThresholds(true)
             .build()

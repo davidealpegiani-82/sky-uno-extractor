@@ -129,13 +129,13 @@ class MainActivity : FragmentActivity() {
         // 30-90 s di buffer, avvio a 6 s e ripresa a 15 s.
         // Non si forza un target 120 s: per un live la finestra reale della
         // playlist e l'offset dal live edge limitano i segmenti effettivamente scaricabili.
-        // Il target live di 45 s (30-90 s) lascia margine senza inseguire il bordo.
+        // Buffer più ampio per assorbire le pause di rete; il live edge limita comunque quanto è scaricabile.
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                30_000, // margine di precaricamento coerente con il ritardo live target
-                90_000, // margine massimo per oscillazioni prolungate
-                6_000, // avvio iniziale
-                15_000 // ripresa dopo un vero esaurimento del buffer
+                40_000, // soglia minima di caricamento: mantenere una riserva consistente
+                120_000, // obiettivo massimo di buffer per assorbire oscillazioni prolungate
+                12_000, // avvio iniziale
+                40_000 // ripresa dopo un vero esaurimento del buffer
             )
             .setPrioritizeTimeOverSizeThresholds(true)
             .build()
