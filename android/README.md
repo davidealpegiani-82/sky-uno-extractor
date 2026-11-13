@@ -24,7 +24,7 @@ Package: `it.davidealpegiani.skyunoextractor`
 - Buffer locale Media3 ampliato per tollerare oscillazioni temporanee della rete.
 - Nessun seek automatico durante il normale buffering; riallineamento al punto live predefinito soltanto quando Media3 segnala `BEHIND_LIVE_WINDOW`.
 - Tentativi di recupero progressivi per errori di rete, annullati quando si cambia canale.
-- Log diagnostici `SkyHLS` per caricamento manifest/segmenti ed errori, senza registrare gli URL completi o i token.
+- Log diagnostici `DAVIX-HLS` per caricamento manifest/segmenti ed errori, senza registrare gli URL completi o i token.
 - Il flag `KEEP_SCREEN_ON` resta attivo durante la riproduzione locale; Cast continua a essere gestito da Media3.
 
 
@@ -55,7 +55,7 @@ La build 1.1.3 incorpora anche il player HTML con video fisso in alto e lista ca
 
 ## DAVIX Cloud Sync — prima integrazione
 
-La branch `feature/sky-cloud-sync-foundation` introduce l'integrazione applicativa con il backend Cloudflare Worker + D1:
+L'integrazione DAVIX Cloud Sync usa il backend Cloudflare Worker + D1:
 
 - **Extractor Android:** configurazione endpoint HTTPS e chiave amministratore; pubblicazione dei canali selezionati; approvazione dei codici di pairing; elenco e revoca dei dispositivi.
 - **Credenziale amministratore:** cifrata localmente con AES-GCM e chiave generata da Android Keystore.
