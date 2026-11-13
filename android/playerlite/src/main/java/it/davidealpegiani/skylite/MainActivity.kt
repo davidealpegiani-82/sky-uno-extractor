@@ -1092,14 +1092,14 @@ class MainActivity : Activity() {
         // con quello del browser che ha caricato la pagina.
         val requestHeaders = mutableMapOf("Accept" to "*/*")
         val browserUa = uri?.getQueryParameter("ua")
-            ?.takeIf { it.isNotBlank() && it.length <= 512 && !it.contains('\\r') && !it.contains('\\n') }
+            ?.takeIf { it.isNotBlank() && it.length <= 512 && !it.contains('\r') && !it.contains('\n') }
         val requestOrigin = uri?.getQueryParameter("origin")
             ?.takeIf { value ->
                 value == "null" || runCatching {
                     val parsedOrigin = Uri.parse(value)
                     parsedOrigin.scheme in listOf("http", "https") && !parsedOrigin.host.isNullOrBlank() &&
                         (parsedOrigin.path.isNullOrEmpty() || parsedOrigin.path == "/") &&
-                        !value.contains('\\r') && !value.contains('\\n')
+                        !value.contains('\r') && !value.contains('\n')
                 }.getOrDefault(false)
             }
         val requestReferer = uri?.getQueryParameter("referer")
@@ -1107,7 +1107,7 @@ class MainActivity : Activity() {
                 runCatching {
                     val parsedReferer = Uri.parse(value)
                     parsedReferer.scheme in listOf("http", "https") && !parsedReferer.host.isNullOrBlank() &&
-                        value.length <= 2048 && !value.contains('\\r') && !value.contains('\\n')
+                        value.length <= 2048 && !value.contains('\r') && !value.contains('\n')
                 }.getOrDefault(false)
             }
         if (requestOrigin != null) requestHeaders["Origin"] = requestOrigin
