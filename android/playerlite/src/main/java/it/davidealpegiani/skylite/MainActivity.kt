@@ -26,6 +26,7 @@ import androidx.media3.common.MimeTypes
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.HttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultLivePlaybackSpeedControl
 import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
@@ -220,10 +221,13 @@ class MainActivity : Activity() {
         playerView = PlayerView(this).apply {
             isFocusable = tvMode
             isFocusableInTouchMode = !tvMode
-            setOnFocusChangeListener { _, focused -> if (focused) showController() }
+            // I controlli non devono riapparire a ogni cambio di focus del PlayerView.
+            // Si mostrano solo dopo un input esplicito (telecomando/click) e si nascondono
+            // da soli dopo il timeout standard.
             setOnClickListener { showController() }
             useController = true
-            controllerAutoShow = true
+            controllerAutoShow = false
+            controllerShowTimeoutMs = 5_000
             setShowBuffering(PlayerView.SHOW_BUFFERING_ALWAYS)
             keepScreenOn = true
             setBackgroundColor(Color.BLACK)
@@ -834,6 +838,19 @@ class MainActivity : Activity() {
 
     override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
         if (isTvDevice() && event.action == android.view.KeyEvent.ACTION_DOWN) {
+            if (!isFullscreen && event.keyCode in setOf(
+                    android.view.KeyEvent.KEYCODE_DPAD_UP,
+                    android.view.KeyEvent.KEYCODE_DPAD_DOWN,
+                    android.view.KeyEvent.KEYCODE_DPAD_LEFT,
+                    android.view.KeyEvent.KEYCODE_DPAD_RIGHT,
+                    android.view.KeyEvent.KEYCODE_DPAD_CENTER,
+                    android.view.KeyEvent.KEYCODE_ENTER,
+                    android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
+                    android.view.KeyEvent.KEYCODE_MEDIA_PLAY,
+                    android.view.KeyEvent.KEYCODE_MEDIA_PAUSE
+                )) {
+                playerView.showController()
+            }
             when (event.keyCode) {
                 android.view.KeyEvent.KEYCODE_MENU,
                 android.view.KeyEvent.KEYCODE_GUIDE -> {
@@ -951,7 +968,17 @@ class MainActivity : Activity() {
                     ) {
                         if (!wasCanceled) {
                             val kind = if (mediaLoadData.dataType == C.DATA_TYPE_MANIFEST) "playlist" else "segmento"
-                            lastHlsLoad = "errore $kind: ${error.javaClass.simpleName}"
+                            var cause: Throwable? = error
+                            var httpCode: Int? = null
+                            while (cause != null) {
+                                if (cause is HttpDataSource.InvalidResponseCodeException) {
+                                    httpCode = cause.responseCode
+                                    break
+                                }
+                                cause = cause.cause
+                            }
+                            lastHlsLoad = httpCode?.let { "errore $kind HTTP $it" }
+                                ?: "errore $kind: ${error.javaClass.simpleName}"
                         }
                     }
                 })
@@ -967,6 +994,7 @@ class MainActivity : Activity() {
 
                     override fun onPlayerError(error: PlaybackException) {
                         val retryable = error.errorCodeName.contains("IO_") ||
+                            error.errorCodeName.contains("TIMEOUT") ||
                             error.errorCodeName.contains("BEHIND_LIVE_WINDOW")
                         val delays = longArrayOf(2_000L, 4_000L, 8_000L, 12_000L, 15_000L)
                         if (retryable && retryCount < delays.size) {
