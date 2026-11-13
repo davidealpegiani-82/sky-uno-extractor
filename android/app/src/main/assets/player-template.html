@@ -91,7 +91,25 @@ function startChannel(i,retry=false){const c=CHANNELS[i];if(!c)return;active=i;i
  else if(window.Hls&&Hls.isSupported()){hls=new Hls({enableWorker:true,lowLatencyMode:false,liveSyncDurationCount:8,liveMaxLatencyDurationCount:24,maxBufferLength:90,maxMaxBufferLength:90,maxBufferSize:90*1000*1000,backBufferLength:30,maxBufferHole:.1,highBufferWatchdogPeriod:2,startFragPrefetch:true,testBandwidth:true,abrEwmaDefaultEstimate:2000000,abrBandWidthFactor:.8,abrBandWidthUpFactor:.7,fragLoadingTimeOut:45000,manifestLoadingTimeOut:30000,manifestLoadingMaxRetry:6,levelLoadingMaxRetry:6,fragLoadingMaxRetry:8,fragLoadingRetryDelay:1000,fragLoadingMaxRetryTimeout:45000,nudgeMaxRetry:6,debug:false});hls.on(Hls.Events.MANIFEST_PARSED,()=>{lastHlsActivity=Date.now();beginPrebuffer()});hls.on(Hls.Events.LEVEL_LOADING,()=>{levelLoading=true;lastHlsActivity=Date.now()});hls.on(Hls.Events.LEVEL_LOADED,()=>{levelLoading=false;lastHlsActivity=Date.now()});hls.on(Hls.Events.FRAG_LOADING,()=>{fragmentLoading=true;lastHlsActivity=Date.now()});hls.on(Hls.Events.FRAG_LOADED,()=>{fragmentLoading=false;lastHlsActivity=Date.now()});hls.on(Hls.Events.FRAG_BUFFERED,()=>{fragmentLoading=false;lastHlsActivity=Date.now();networkRetryCount=0;recovering=false;checkBufferPolicy()});hls.on(Hls.Events.ERROR,(_,e)=>{if(e){if(e.details===Hls.ErrorDetails.FRAG_LOAD_ERROR||e.details===Hls.ErrorDetails.FRAG_LOAD_TIMEOUT){fragmentLoading=false;levelLoading=false;lastHlsActivity=Date.now()}if(e.fatal){if(e.type===Hls.ErrorTypes.NETWORK_ERROR){recoverNetwork('Errore di rete')}else if(e.type===Hls.ErrorTypes.MEDIA_ERROR){try{hls.recoverMediaError()}catch(_){recover('Errore del flusso')}}else recover('Errore del flusso')}}});hls.loadSource(c.url);hls.attachMedia(video)}
  else setStatus('HLS non supportato da questo browser. Usa Apri con DAVIX Player su Android.');
  startWatchdog();updateBuffer()}
-function openLite(){if(active<0||!CHANNELS[active]){setStatus('Seleziona prima un canale.');return}const c=CHANNELS[active],q=new URLSearchParams({url:c.url,name:c.name});location.href='intent://play?'+q.toString()+'#Intent;scheme=skylite;package=it.davidealpegiani.skylite;S.browser_fallback_url='+encodeURIComponent(APK_URL)+';end'}
+function openLite(){
+ if(active<0||!CHANNELS[active]){setStatus('Seleziona prima un canale.');return}
+ const c=CHANNELS[active],q=new URLSearchParams({url:c.url,name:c.name});
+ // Passa al player nativo il contesto HTTP reale del browser. Il browser aggiunge
+ // automaticamente User-Agent e Origin alle richieste HLS cross-origin; Media3 no.
+ try{
+  const pageUrl=new URL(location.href),streamUrl=new URL(c.url);
+  if(navigator.userAgent)q.set('ua',navigator.userAgent);
+  if(pageUrl.origin)q.set('origin',pageUrl.origin);
+  // Rispetta la referrer policy predefinita strict-origin-when-cross-origin.
+  if(pageUrl.protocol==='http:'||pageUrl.protocol==='https:'){
+   if(!(pageUrl.protocol==='https:'&&streamUrl.protocol==='http:')){
+    const referrer=pageUrl.origin===streamUrl.origin?pageUrl.href:(pageUrl.origin==='null'?'':pageUrl.origin+'/');
+    if(referrer)q.set('referer',referrer);
+   }
+  }
+ }catch(e){}
+ location.href='intent://play?'+q.toString()+'#Intent;scheme=skylite;package=it.davidealpegiani.skylite;S.browser_fallback_url='+encodeURIComponent(APK_URL)+';end'
+}
 document.getElementById('openLite').addEventListener('click',openLite);
 const videoStage=document.getElementById('videoStage'),fullscreenBtn=document.getElementById('fullscreenBtn');
 async function toggleFullscreen(){try{if(document.fullscreenElement){await document.exitFullscreen()}else if(videoStage.requestFullscreen){await videoStage.requestFullscreen()}else if(video.webkitEnterFullscreen){video.webkitEnterFullscreen()}else{setStatus('Schermo intero non supportato da questo browser.')}}catch(e){if(video.webkitEnterFullscreen){try{video.webkitEnterFullscreen()}catch(_){setStatus('Impossibile attivare lo schermo intero.')}}else setStatus('Impossibile attivare lo schermo intero.')}}

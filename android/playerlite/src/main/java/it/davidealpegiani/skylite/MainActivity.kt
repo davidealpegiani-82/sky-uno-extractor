@@ -112,6 +112,8 @@ class MainActivity : Activity() {
     private var lastAuthorizationCheckAt = 0L
     private var lastChannelClickName: String? = null
     private var lastChannelClickAt = 0L
+    private lateinit var hlsHttpDataSourceFactory: DefaultHttpDataSource.Factory
+    private var defaultHlsUserAgent: String = ""
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -944,12 +946,12 @@ class MainActivity : Activity() {
         // alcuni server rifiutano (403) User-Agent applicativi non riconosciuti.
         // WebSettings fornisce lo User-Agent effettivo del WebView installato,
         // senza inventare una versione di Chrome. Il fallback mantiene la compatibilità.
-        val browserUserAgent = runCatching {
+        defaultHlsUserAgent = runCatching {
             android.webkit.WebSettings.getDefaultUserAgent(this)
         }.getOrDefault("Mozilla/5.0 (Linux; Android) AppleWebKit/537.36 (KHTML, like Gecko) Chrome Safari/537.36")
 
-        val httpFactory = DefaultHttpDataSource.Factory()
-            .setUserAgent(browserUserAgent)
+        hlsHttpDataSourceFactory = DefaultHttpDataSource.Factory()
+            .setUserAgent(defaultHlsUserAgent)
             .setDefaultRequestProperties(mapOf("Accept" to "*/*"))
             .setConnectTimeoutMs(15_000)
             .setReadTimeoutMs(45_000)
@@ -961,7 +963,7 @@ class MainActivity : Activity() {
             .setTargetLiveOffsetIncrementOnRebufferMs(10_000)
             .build()
 
-        val mediaSourceFactory = HlsMediaSource.Factory(httpFactory)
+        val mediaSourceFactory = HlsMediaSource.Factory(hlsHttpDataSourceFactory)
             .setLoadErrorHandlingPolicy(DefaultLoadErrorHandlingPolicy(6))
 
         player = ExoPlayer.Builder(this)
@@ -1084,6 +1086,34 @@ class MainActivity : Activity() {
             statusView.text = "Indirizzo del flusso non valido."
             return
         }
+
+        // Se il canale viene aperto dal player HTML, riusa il contesto HTTP
+        // del browser: il solo User-Agent del WebView non coincide necessariamente
+        // con quello del browser che ha caricato la pagina.
+        val requestHeaders = mutableMapOf("Accept" to "*/*")
+        val browserUa = uri?.getQueryParameter("ua")
+            ?.takeIf { it.isNotBlank() && it.length <= 512 && !it.contains('\r') && !it.contains('\n') }
+        val requestOrigin = uri?.getQueryParameter("origin")
+            ?.takeIf { value ->
+                value == "null" || runCatching {
+                    val parsedOrigin = Uri.parse(value)
+                    parsedOrigin.scheme in listOf("http", "https") && !parsedOrigin.host.isNullOrBlank() &&
+                        (parsedOrigin.path.isNullOrEmpty() || parsedOrigin.path == "/") &&
+                        !value.contains('\r') && !value.contains('\n')
+                }.getOrDefault(false)
+            }
+        val requestReferer = uri?.getQueryParameter("referer")
+            ?.takeIf { value ->
+                runCatching {
+                    val parsedReferer = Uri.parse(value)
+                    parsedReferer.scheme in listOf("http", "https") && !parsedReferer.host.isNullOrBlank() &&
+                        value.length <= 2048 && !value.contains('\r') && !value.contains('\n')
+                }.getOrDefault(false)
+            }
+        if (requestOrigin != null) requestHeaders["Origin"] = requestOrigin
+        if (requestReferer != null) requestHeaders["Referer"] = requestReferer
+        hlsHttpDataSourceFactory.setUserAgent(browserUa ?: defaultHlsUserAgent)
+        hlsHttpDataSourceFactory.setDefaultRequestProperties(requestHeaders)
 
         titleView.text = channelName
         statusView.text = "Connessione al flusso…"
