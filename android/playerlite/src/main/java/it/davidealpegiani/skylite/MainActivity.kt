@@ -85,9 +85,16 @@ class MainActivity : Activity() {
                 Player.STATE_ENDED -> "ENDED"
                 else -> "?"
             }
-            diagnosticsView.text = "HLS: $state · buffer ${aheadMs / 1000}s · " +
-                (if (current.isLoading) "download attivo" else "download in attesa") +
-                " · $lastHlsLoad"
+            if (current.playbackState == Player.STATE_BUFFERING && lastReportedPlaybackState == Player.STATE_READY) {
+                rebufferCount++
+            }
+            lastReportedPlaybackState = current.playbackState
+            val liveOffsetMs = current.currentLiveOffset
+            val liveOffset = if (liveOffsetMs == C.TIME_UNSET) "n/d" else "${liveOffsetMs / 1000}s"
+            val lease = if (PlayerCloudSync.hasValidLease(this@MainActivity)) "valida" else "scaduta/non attiva"
+            diagnosticsView.text = "HLS: $state · buffer ${aheadMs / 1000}s · live $liveOffset\n" +
+                "rebuffer $rebufferCount · retry $retryCount · licenza $lease\n" +
+                "${if (current.isLoading) "download attivo" else "download in attesa"} · $lastHlsLoad · errore $lastPlayerError"
             monitorPlaybackHealth(current, now, aheadMs)
             retryHandler.postDelayed(this, 1000L)
         }
@@ -96,6 +103,11 @@ class MainActivity : Activity() {
     @Volatile private var lastHlsLoad = "segmenti: in attesa"
     private var retryCount = 0
     private var retryTask: Runnable? = null
+    // Invalida in modo atomico i retry appartenenti a un canale o a una sessione precedente.
+    private var playbackGeneration = 0L
+    private var rebufferCount = 0
+    private var lastReportedPlaybackState = Player.STATE_IDLE
+    private var lastPlayerError = "nessuno"
     private lateinit var endpointInput: EditText
     private lateinit var activationCodeInput: EditText
     private lateinit var pairButton: Button
@@ -693,9 +705,14 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun stopPlaybackForAuthorization() {
+    private fun cancelPendingRecovery(invalidateGeneration: Boolean = true) {
+        if (invalidateGeneration) playbackGeneration++
         retryTask?.let { retryHandler.removeCallbacks(it) }
         retryTask = null
+    }
+
+    private fun stopPlaybackForAuthorization() {
+        cancelPendingRecovery()
         selectedChannelForRecovery = null
         bufferingStartedAt = 0L
         player?.apply { stop(); clearMediaItems() }
@@ -733,15 +750,17 @@ class MainActivity : Activity() {
             statusView.text = "Indirizzo del flusso non valido."
             return
         }
+        cancelPendingRecovery()
         titleView.text = channel.name
         statusView.text = "Connessione al flusso…"
         selectedChannelForRecovery = channel
         bufferingStartedAt = System.currentTimeMillis()
         lastPlaybackProgressAt = bufferingStartedAt
         lastObservedPositionMs = C.TIME_UNSET
-        retryTask?.let { retryHandler.removeCallbacks(it) }
-        retryTask = null
         retryCount = 0
+        lastPlayerError = "nessuno"
+        rebufferCount = 0
+        lastReportedPlaybackState = Player.STATE_IDLE
         player?.apply {
             stop()
             clearMediaItems()
@@ -877,8 +896,10 @@ class MainActivity : Activity() {
                 android.view.KeyEvent.KEYCODE_GUIDE -> {
                     if (isFullscreen) {
                         toggleFullscreenChannelDrawer()
-                        return true
+                    } else {
+                        playerView.showController()
                     }
+                    return true
                 }
                 android.view.KeyEvent.KEYCODE_BACK,
                 android.view.KeyEvent.KEYCODE_ESCAPE -> {
@@ -897,6 +918,13 @@ class MainActivity : Activity() {
                 val overlayWasVisible = fullscreenOverlayVisible
                 showFullscreenOverlay(autoHide = true, requestFocus = !overlayWasVisible)
                 when (event.keyCode) {
+                    android.view.KeyEvent.KEYCODE_DPAD_CENTER,
+                    android.view.KeyEvent.KEYCODE_ENTER -> {
+                        if (currentFocus === playerView) {
+                            player?.let { if (it.isPlaying) it.pause() else it.play() }
+                            return true
+                        }
+                    }
                     android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
                         player?.let { if (it.isPlaying) it.pause() else it.play() }
                         return true
@@ -997,6 +1025,7 @@ class MainActivity : Activity() {
         val channel = selectedChannelForRecovery ?: return
         val current = player ?: return
         if (!current.playWhenReady || isFinishing || isDestroyed) return
+        val scheduledGeneration = playbackGeneration
 
         val delays = longArrayOf(2_000L, 4_000L, 8_000L, 15_000L, 30_000L, 45_000L, 60_000L)
         val delay = delays[retryCount.coerceAtMost(delays.lastIndex)]
@@ -1007,7 +1036,7 @@ class MainActivity : Activity() {
             retryTask = null
             val activePlayer = player ?: return@Runnable
             if (!activePlayer.playWhenReady || !PlayerCloudSync.hasValidLease(this) ||
-                selectedChannelForRecovery?.url != channel.url) return@Runnable
+                scheduledGeneration != playbackGeneration || selectedChannelForRecovery?.url != channel.url) return@Runnable
 
             bufferingStartedAt = System.currentTimeMillis()
             lastPlaybackProgressAt = bufferingStartedAt
@@ -1115,6 +1144,7 @@ class MainActivity : Activity() {
                     }
 
                     override fun onPlayerError(error: PlaybackException) {
+                        lastPlayerError = error.errorCodeName
                         val retryable = error.errorCodeName.contains("IO_") ||
                             error.errorCodeName.contains("TIMEOUT") ||
                             error.errorCodeName.contains("BEHIND_LIVE_WINDOW")
@@ -1203,7 +1233,11 @@ class MainActivity : Activity() {
         statusView.text = "Connessione al flusso…"
         // Usa la stessa MediaSourceFactory HLS configurata in initializePlayer().
         // Il MIME esplicito evita ambiguità con flussi HLS senza estensione .m3u8.
+        cancelPendingRecovery()
         selectedChannelForRecovery = CloudChannel(channelName, streamUrl)
+        lastPlayerError = "nessuno"
+        rebufferCount = 0
+        lastReportedPlaybackState = Player.STATE_IDLE
         bufferingStartedAt = System.currentTimeMillis()
         lastPlaybackProgressAt = bufferingStartedAt
         lastObservedPositionMs = C.TIME_UNSET
@@ -1221,6 +1255,7 @@ class MainActivity : Activity() {
 
     override fun onStop() {
         retryHandler.removeCallbacks(diagnosticsTask)
+        cancelPendingRecovery()
         resumeAfterBackground = player?.playWhenReady == true && (player?.mediaItemCount ?: 0) > 0
         player?.pause()
         super.onStop()
@@ -1240,7 +1275,7 @@ class MainActivity : Activity() {
 
     override fun onDestroy() {
         retryHandler.removeCallbacks(diagnosticsTask)
-        retryTask?.let { retryHandler.removeCallbacks(it) }
+        cancelPendingRecovery()
         retryHandler.removeCallbacksAndMessages(null)
         cloudHandler.removeCallbacksAndMessages(null)
         cloudExecutor.shutdownNow()
