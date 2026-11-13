@@ -1,4 +1,4 @@
-# Sky Uno Extractor — Android
+# DAVIX — Android
 
 Progetto Android nativo in Kotlin. L'app conserva le funzioni principali dell'estrattore web:
 - importazione multipla di file HTML, HTM, TXT, M3U, M3U8 e JSON tramite selettore Android;
@@ -10,7 +10,7 @@ Progetto Android nativo in Kotlin. L'app conserva le funzioni principali dell'es
 
 ## Build APK
 
-Il workflow GitHub Actions **Build Sky Uno Extractor APK** compila l'APK debug a ogni modifica della cartella `android/` e può essere avviato anche manualmente da Actions. L'APK viene pubblicato come artifact della build.
+Il workflow GitHub Actions **Build DAVIX Extractor APK** compila l'APK debug a ogni modifica della cartella `android/` e può essere avviato anche manualmente da Actions. L'APK viene pubblicato come artifact della build.
 
 ## Nota sui flussi HTTP
 
@@ -53,29 +53,29 @@ Le configurazioni delle revisioni precedenti sono state confrontate separando il
 La build 1.1.3 incorpora anche il player HTML con video fisso in alto e lista canali a scorrimento verticale. Le soglie sono obiettivi del client, non garanzie: manifest, segmenti, rete e server della sorgente restano determinanti.
 
 
-## Sky Cloud Sync — prima integrazione
+## DAVIX Cloud Sync — prima integrazione
 
 La branch `feature/sky-cloud-sync-foundation` introduce l'integrazione applicativa con il backend Cloudflare Worker + D1:
 
 - **Extractor Android:** configurazione endpoint HTTPS e chiave amministratore; pubblicazione dei canali selezionati; approvazione dei codici di pairing; elenco e revoca dei dispositivi.
 - **Credenziale amministratore:** cifrata localmente con AES-GCM e chiave generata da Android Keystore.
-- **Player Lite:** pairing individuale, credenziale dispositivo cifrata con Android Keystore, controllo della versione all'avvio, download solo quando la versione cambia e cache locale dell'ultima configurazione valida.
-- **Android TV / Fire TV:** Player Lite dichiara il supporto opzionale Leanback e non richiede touchscreen; la navigazione dei canali usa controlli focusabili.
+- **Player:** pairing individuale, credenziale dispositivo cifrata con Android Keystore, controllo della versione all'avvio, download solo quando la versione cambia e cache locale dell'ultima configurazione valida.
+- **Android TV / Fire TV:** Player dichiara il supporto opzionale Leanback e non richiede touchscreen; la navigazione dei canali usa controlli focusabili.
 - **Player HTML esportato:** riceve l'endpoint Cloud Sync configurato nell'Extractor, consente il pairing e controlla la versione all'apertura. La lista sincronizzata viene conservata nel local storage del browser; se la sincronizzazione fallisce resta disponibile la lista salvata o incorporata.
 
 ### Attivazione e primo utilizzo
 
-Il backend è pubblicato all'indirizzo `https://sky-cloud-sync.davide-alpegiani.workers.dev` e il database D1 è collegato. L'endpoint è già precompilato nelle nuove build di Extractor e Player Lite.
+Il backend è pubblicato all'indirizzo `https://sky-cloud-sync.davide-alpegiani.workers.dev` e il database D1 è collegato. L'endpoint è già precompilato nelle nuove build di Extractor e Player.
 
-1. In Sky Extractor aprire **Configura Sky Cloud Sync**.
+1. In DAVIX Extractor aprire **Configura DAVIX Cloud Sync**.
 2. Verificare l'indirizzo precompilato e inserire la stessa chiave amministratore configurata nel secret Cloudflare `SKY_ADMIN_KEY` (conservarla in un password manager; non inviarla in chat e non inserirla nell'HTML).
 3. Selezionare i canali e scegliere **Pubblica aggiornamento remoto**.
-4. Sul Player Lite o nell'HTML esportato avviare **Collega Player** e comunicare il codice temporaneo a Extractor.
+4. Sul Player o nell'HTML esportato avviare **Collega Player** e comunicare il codice temporaneo a Extractor.
 5. In Extractor scegliere **Autorizza Player** e inserire il codice. Dopo l'approvazione, il Player scarica la lista e conserva una copia locale.
 
-Le build Android aggiornate vengono pubblicate dal workflow **Build Sky Extractor and Player Lite APKs**. Il link stabile di Player Lite è `https://github.com/davidealpegiani-82/sky-uno-extractor/releases/download/player-lite-latest/Sky-Player-Lite.apk`.
+Le build Android aggiornate vengono pubblicate dal workflow **Build DAVIX Extractor and Player APKs**. Il link stabile di Player è `https://github.com/davidealpegiani-82/sky-uno-extractor/releases/download/player-lite-latest/Sky-Player-Lite.apk`.
 
-Se Cloud Sync non è raggiungibile, Player Lite e HTML mantengono la configurazione locale già salvata.
+Se Cloud Sync non è raggiungibile, Player e HTML mantengono la configurazione locale già salvata.
 
 ### Limiti di sicurezza da conoscere
 
