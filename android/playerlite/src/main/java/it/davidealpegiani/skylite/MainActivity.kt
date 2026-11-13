@@ -26,6 +26,7 @@ import androidx.media3.common.MimeTypes
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.HttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultLivePlaybackSpeedControl
 import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
@@ -967,7 +968,17 @@ class MainActivity : Activity() {
                     ) {
                         if (!wasCanceled) {
                             val kind = if (mediaLoadData.dataType == C.DATA_TYPE_MANIFEST) "playlist" else "segmento"
-                            lastHlsLoad = "errore $kind: ${error.javaClass.simpleName}"
+                            var cause: Throwable? = error
+                            var httpCode: Int? = null
+                            while (cause != null) {
+                                if (cause is HttpDataSource.InvalidResponseCodeException) {
+                                    httpCode = cause.responseCode
+                                    break
+                                }
+                                cause = cause.cause
+                            }
+                            lastHlsLoad = httpCode?.let { "errore $kind HTTP $it" }
+                                ?: "errore $kind: ${error.javaClass.simpleName}"
                         }
                     }
                 })
