@@ -503,37 +503,109 @@ class MainActivity : Activity() {
             return
         }
         cloudChannels.forEach { channel ->
-            val item = TextView(this).apply {
-                text = "▶   ${channel.name}"
-                isFocusable = true
-                isClickable = true
-                isSingleLine = false
-                maxLines = 2
-                ellipsize = android.text.TextUtils.TruncateAt.END
-                gravity = Gravity.CENTER_VERTICAL
-                textSize = if (isTvDevice()) 19f else 15f
-                includeFontPadding = true
-                setLineSpacing(dp(2).toFloat(), 1.0f)
-                setTextColor(Color.rgb(244, 249, 255))
-                setPadding(dp(22), if (isTvDevice()) dp(25) else dp(12), dp(20), if (isTvDevice()) dp(25) else dp(12))
-                minHeight = if (isTvDevice()) dp(86) else dp(52)
-                isFocusable = true
-                isFocusableInTouchMode = !isTvDevice()
-                background = channelFocusBackground(false)
-                setOnFocusChangeListener { _, focused -> background = channelFocusBackground(focused) }
-                setOnClickListener { onCloudChannelClicked(channel) }
-            }
-            channelsList.addView(item, LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply {
-                height = ViewGroup.LayoutParams.WRAP_CONTENT
-                bottomMargin = if (isTvDevice()) dp(10) else dp(8)
-            })
+            channelsList.addView(
+                buildChannelRow(channel, isCompact = false) { onCloudChannelClicked(channel) },
+                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                    bottomMargin = if (isTvDevice()) dp(8) else dp(6)
+                }
+            )
         }
         renderFullscreenChannelList()
         if (isTvDevice()) {
             channelsList.post { channelsList.getChildAt(0)?.requestFocus() }
         }
+    }
+
+    /**
+     * Riga canale condivisa tra schermata principale e drawer TV.
+     * Il placeholder usa l'iniziale del canale: nessuna richiesta di rete aggiuntiva
+     * e nessun logo remoto può rallentare lo scorrimento con il telecomando.
+     */
+    private fun buildChannelRow(
+        channel: CloudChannel,
+        isCompact: Boolean,
+        onClick: () -> Unit
+    ): View {
+        val selected = selectedChannelForRecovery?.url == channel.url
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            isFocusable = true
+            isFocusableInTouchMode = !isTvDevice()
+            isClickable = true
+            minimumHeight = dp(if (isTvDevice()) 82 else 62)
+            setPadding(dp(if (isCompact) 14 else 16), dp(8), dp(14), dp(8))
+            background = channelFocusBackground(false, selected)
+            clipToPadding = false
+        }
+        val accent = View(this).apply {
+            setBackgroundColor(if (selected) Color.rgb(0, 212, 255) else Color.TRANSPARENT)
+        }
+        row.addView(accent, LinearLayout.LayoutParams(dp(4), ViewGroup.LayoutParams.MATCH_PARENT).apply {
+            rightMargin = dp(12)
+        })
+        val logo = TextView(this).apply {
+            text = channel.name.trim().firstOrNull()?.uppercase() ?: "▶"
+            gravity = Gravity.CENTER
+            textSize = if (isTvDevice()) 18f else 15f
+            setTypeface(null, android.graphics.Typeface.BOLD)
+            setTextColor(if (selected) Color.rgb(0, 212, 255) else Color.rgb(205, 225, 238))
+            background = android.graphics.drawable.GradientDrawable().apply {
+                shape = android.graphics.drawable.GradientDrawable.OVAL
+                setColor(if (selected) Color.rgb(14, 56, 73) else Color.rgb(29, 43, 61))
+                setStroke(dp(1), if (selected) Color.rgb(0, 160, 195) else Color.rgb(57, 82, 108))
+            }
+        }
+        row.addView(logo, LinearLayout.LayoutParams(dp(44), dp(44)).apply { rightMargin = dp(14) })
+
+        val labels = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val name = TextView(this).apply {
+            text = channel.name
+            setTextColor(Color.rgb(241, 245, 249))
+            textSize = if (isTvDevice()) 19f else 15f
+            setTypeface(null, if (selected) android.graphics.Typeface.BOLD else android.graphics.Typeface.MEDIUM)
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+        }
+        val subtitle = TextView(this).apply {
+            text = if (selected) "IN RIPRODUZIONE" else "CANALE LIVE"
+            setTextColor(if (selected) Color.rgb(0, 190, 220) else Color.rgb(132, 153, 174))
+            textSize = 10f
+            letterSpacing = 0.10f
+            setTypeface(null, android.graphics.Typeface.BOLD)
+            setPadding(0, dp(3), 0, 0)
+        }
+        labels.addView(name)
+        labels.addView(subtitle)
+        row.addView(labels, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+
+        val live = TextView(this).apply {
+            text = if (selected) "ON AIR" else "LIVE"
+            gravity = Gravity.CENTER
+            setTextColor(if (selected) Color.rgb(4, 18, 26) else Color.rgb(135, 205, 221))
+            textSize = 10f
+            setTypeface(null, android.graphics.Typeface.BOLD)
+            letterSpacing = 0.06f
+            setPadding(dp(10), dp(6), dp(10), dp(6))
+            background = android.graphics.drawable.GradientDrawable().apply {
+                cornerRadius = dp(12).toFloat()
+                setColor(if (selected) Color.rgb(0, 212, 255) else Color.rgb(22, 54, 69))
+                setStroke(dp(1), if (selected) Color.rgb(0, 212, 255) else Color.rgb(45, 105, 128))
+            }
+        }
+        row.addView(live, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        row.setOnFocusChangeListener { view, focused ->
+            view.background = channelFocusBackground(focused, selected)
+            view.animate().scaleX(if (focused) 1.025f else 1f).scaleY(if (focused) 1.025f else 1f)
+                .translationZ(if (focused) dp(8).toFloat() else 0f)
+                .setDuration(150L).start()
+            accent.setBackgroundColor(if (focused || selected) Color.rgb(0, 212, 255) else Color.TRANSPARENT)
+        }
+        row.setOnClickListener { onClick() }
+        return row
     }
 
     private fun primaryActionBackground(focused: Boolean): android.graphics.drawable.GradientDrawable =
@@ -563,25 +635,15 @@ class MainActivity : Activity() {
             return
         }
         cloudChannels.forEach { channel ->
-            val row = TextView(this).apply {
-                text = "▶   ${channel.name}"
-                textSize = 19f
-                maxLines = 2
-                gravity = Gravity.CENTER_VERTICAL
-                setTextColor(Color.WHITE)
-                setPadding(dp(18), dp(18), dp(18), dp(18))
-                isFocusable = true
-                isClickable = true
-                background = channelActionBackground()
-                setOnFocusChangeListener { _, focused -> background = channelActionBackground(focused) }
-                setOnClickListener {
+            fullscreenChannelList.addView(
+                buildChannelRow(channel, isCompact = true) {
                     closeFullscreenChannelDrawer()
                     playCloudChannel(channel)
+                },
+                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                    bottomMargin = dp(8)
                 }
-            }
-            fullscreenChannelList.addView(row, LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = dp(8) })
+            )
         }
     }
 
@@ -608,12 +670,22 @@ class MainActivity : Activity() {
         if (isFullscreen) showFullscreenOverlay(autoHide = true, requestFocus = true)
     }
 
-    private fun channelFocusBackground(focused: Boolean): android.graphics.drawable.GradientDrawable =
+    private fun channelFocusBackground(
+        focused: Boolean,
+        selected: Boolean = false
+    ): android.graphics.drawable.GradientDrawable =
         android.graphics.drawable.GradientDrawable().apply {
-            setColor(if (focused) Color.rgb(17, 68, 91) else Color.rgb(18, 31, 52))
-            cornerRadius = dp(18).toFloat()
-            if (focused) setStroke(dp(3), Color.rgb(69, 220, 255))
-            else setStroke(dp(1), Color.rgb(42, 69, 99))
+            setColor(when {
+                focused -> Color.rgb(20, 61, 78)
+                selected -> Color.rgb(18, 43, 58)
+                else -> Color.rgb(21, 27, 35)
+            })
+            cornerRadius = dp(14).toFloat()
+            when {
+                focused -> setStroke(dp(3), Color.rgb(0, 212, 255))
+                selected -> setStroke(dp(1), Color.rgb(0, 137, 166))
+                else -> setStroke(dp(1), Color.rgb(43, 58, 75))
+            }
         }
 
     private fun beginCloudPairing() {
