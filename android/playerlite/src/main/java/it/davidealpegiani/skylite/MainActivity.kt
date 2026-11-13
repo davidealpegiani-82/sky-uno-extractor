@@ -512,7 +512,9 @@ class MainActivity : Activity() {
         }
         renderFullscreenChannelList()
         if (isTvDevice()) {
-            channelsList.post { channelsList.getChildAt(0)?.requestFocus() }
+            val selectedIndex = cloudChannels.indexOfFirst { it.url == selectedChannelForRecovery?.url }
+                .takeIf { it >= 0 } ?: 0
+            channelsList.post { channelsList.getChildAt(selectedIndex)?.requestFocus() }
         }
     }
 
@@ -833,6 +835,7 @@ class MainActivity : Activity() {
         lastPlayerError = "nessuno"
         rebufferCount = 0
         lastReportedPlaybackState = Player.STATE_IDLE
+        renderCloudChannels()
         player?.apply {
             stop()
             clearMediaItems()
