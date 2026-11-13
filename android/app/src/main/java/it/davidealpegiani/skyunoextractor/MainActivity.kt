@@ -548,6 +548,14 @@ class MainActivity : FragmentActivity() {
         setPadding(0, dp(10), 0, dp(2))
     }
 
+    private fun cloudSyncErrorMessage(error: Exception): String = when (error) {
+        is java.net.SocketTimeoutException ->
+            "Timeout: il Worker DAVIX Cloud Sync non ha risposto in tempo. Verifica la connessione e riprova."
+        is IOException ->
+            "Worker DAVIX Cloud Sync non raggiungibile. Controlla rete, DNS e indirizzo HTTPS del servizio."
+        else -> error.message?.takeIf { it.isNotBlank() } ?: "Errore imprevisto di DAVIX Cloud Sync."
+    }
+
     private fun runCloudAdminTask(task: () -> JSONObject, onSuccess: (JSONObject) -> Unit) {
         status.text = "Connessione a DAVIX Cloud Sync…"
         Thread {
@@ -559,7 +567,7 @@ class MainActivity : FragmentActivity() {
             } catch (e: Exception) {
                 runOnUiThread {
                     if (!isFinishing && !isDestroyed) {
-                        status.text = "Cloud Sync: ${e.message ?: "errore di connessione"}"
+                        status.text = "Cloud Sync: ${cloudSyncErrorMessage(e)}"
                         toast(status.text.toString())
                     }
                 }
@@ -663,7 +671,7 @@ class MainActivity : FragmentActivity() {
                         .show()
                 }
             } catch (e: Exception) {
-                runOnUiThread { if (!isFinishing && !isDestroyed) toast(e.message ?: "Impossibile caricare i dispositivi.") }
+                runOnUiThread { if (!isFinishing && !isDestroyed) toast(cloudSyncErrorMessage(e)) }
             }
         }.start()
     }
