@@ -1,4 +1,4 @@
-name: Build Sky Extractor and Player Lite APKs
+name: Build DAVIX Android APKs
 
 on:
   workflow_dispatch:
@@ -37,30 +37,30 @@ jobs:
         run: gradle --no-daemon :app:assembleDebug :playerlite:assembleDebug
       - name: Rename APKs
         run: |
-          cp "android/app/build/outputs/apk/debug/app-debug.apk" "android/app/build/outputs/apk/debug/Sky-Extractor.apk"
-          cp "android/playerlite/build/outputs/apk/debug/playerlite-debug.apk" "android/playerlite/build/outputs/apk/debug/Sky-Player-Lite.apk"
-      - name: Upload Sky Extractor APK
+          cp "android/app/build/outputs/apk/debug/app-debug.apk" "android/app/build/outputs/apk/debug/DAVIX-Extractor.apk"
+          cp "android/playerlite/build/outputs/apk/debug/playerlite-debug.apk" "android/playerlite/build/outputs/apk/debug/DAVIX-Player.apk"
+      - name: Upload DAVIX Extractor APK
         uses: actions/upload-artifact@v4
         with:
-          name: Sky-Extractor
-          path: "android/app/build/outputs/apk/debug/Sky-Extractor.apk"
+          name: DAVIX-Extractor
+          path: "android/app/build/outputs/apk/debug/DAVIX-Extractor.apk"
           if-no-files-found: error
           retention-days: 30
-      - name: Upload Player Lite APK
+      - name: Upload DAVIX Player APK
         uses: actions/upload-artifact@v4
         with:
-          name: Sky-Player-Lite
-          path: "android/playerlite/build/outputs/apk/debug/Sky-Player-Lite.apk"
+          name: DAVIX-Player
+          path: "android/playerlite/build/outputs/apk/debug/DAVIX-Player.apk"
           if-no-files-found: error
           retention-days: 30
-      - name: Publish stable Player Lite APK
+      - name: Publish stable DAVIX Player APK
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: player-lite-latest
-          name: Sky Player Lite - ultima build
+          name: DAVIX Player - ultima build
           prerelease: true
           make_latest: false
           files: |
-            android/app/build/outputs/apk/debug/Sky-Extractor.apk
-            android/playerlite/build/outputs/apk/debug/Sky-Player-Lite.apk
+            android/app/build/outputs/apk/debug/DAVIX-Extractor.apk
+            android/playerlite/build/outputs/apk/debug/DAVIX-Player.apk

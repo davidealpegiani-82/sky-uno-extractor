@@ -146,7 +146,7 @@ class MainActivity : Activity() {
             }
             val brandStack = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_VERTICAL }
             val brand = TextView(this).apply {
-                text = android.text.SpannableString("SKY  PLAYER").apply {
+                text = android.text.SpannableString("DAVIX  PLAYER").apply {
                     setSpan(android.text.style.ForegroundColorSpan(Color.rgb(69, 220, 255)), 0, 3, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
                 }
                 setTextColor(Color.WHITE)
@@ -199,7 +199,7 @@ class MainActivity : Activity() {
             tvContent.addView(controls, LinearLayout.LayoutParams(dp(420), ViewGroup.LayoutParams.MATCH_PARENT))
         }
         titleView = TextView(this).apply {
-            text = android.text.SpannableString("SKY  PLAYER LITE").apply {
+            text = android.text.SpannableString("DAVIX  PLAYER").apply {
                 setSpan(android.text.style.ForegroundColorSpan(Color.rgb(69, 220, 255)), 0, 3, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
                 setSpan(android.text.style.RelativeSizeSpan(1.08f), 0, 3, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             }
@@ -211,7 +211,7 @@ class MainActivity : Activity() {
             setPadding(dp(12), dp(26), dp(12), dp(10))
         }
         statusView = TextView(this).apply {
-            text = if (tvMode) "LIVE TELEVISION  •  BIG SCREEN EXPERIENCE" else "Apri un canale da Sky Player HTML."
+            text = if (tvMode) "LIVE TELEVISION  •  BIG SCREEN EXPERIENCE" else "Apri un canale dal DAVIX Player."
             setTextColor(Color.rgb(135, 177, 205))
             textSize = if (tvMode) 11f else 13f
             letterSpacing = if (tvMode) 0.16f else 0f
@@ -253,7 +253,7 @@ class MainActivity : Activity() {
         // La configurazione Cloud resta interna: non va mostrata nell'interfaccia del Player.
 
         endpointInput = EditText(this).apply {
-            hint = "Indirizzo Sky Cloud Sync (HTTPS)"
+            hint = "Indirizzo DAVIX Cloud Sync (HTTPS)"
             setSingleLine(true)
             textSize = 13f
             setText(PlayerCloudSync.baseUrl(this@MainActivity))
@@ -530,7 +530,7 @@ class MainActivity : Activity() {
         fullscreenChannelList.removeAllViews()
         if (cloudChannels.isEmpty()) {
             fullscreenChannelList.addView(TextView(this).apply {
-                text = "Nessun canale disponibile nell'elenco locale.\n\nPer visualizzare qui la playlist completa, associa il Player a Sky Cloud Sync oppure aggiorna la lista sincronizzata."
+                text = "Nessun canale disponibile nell'elenco locale.\n\nPer visualizzare qui la playlist completa, associa il Player a DAVIX Cloud Sync oppure aggiorna la lista sincronizzata."
                 setTextColor(Color.rgb(210, 220, 232))
                 textSize = 17f
                 setPadding(dp(16), dp(20), dp(16), dp(20))
@@ -637,7 +637,7 @@ class MainActivity : Activity() {
             cloudStatusView.text = "Accesso bloccato: inserisci un codice monouso generato da Admin"
             return
         }
-        cloudStatusView.text = "Controllo aggiornamenti Sky Cloud Sync…"
+        cloudStatusView.text = "Controllo aggiornamenti DAVIX Cloud Sync…"
         cloudExecutor.execute {
             try {
                 val result = PlayerCloudSync.sync(this)
@@ -905,7 +905,7 @@ class MainActivity : Activity() {
             .build()
 
         val httpFactory = DefaultHttpDataSource.Factory()
-            .setUserAgent("SkyPlayerLite/1.0 (Android)")
+            .setUserAgent("DAVIXPlayer/1.0 (Android)")
             .setConnectTimeoutMs(15_000)
             .setReadTimeoutMs(45_000)
             .setAllowCrossProtocolRedirects(true)
@@ -1019,7 +1019,7 @@ class MainActivity : Activity() {
             ?: "Canale live"
 
         if (streamUrl.isNullOrBlank()) {
-            statusView.text = "Apri un canale da Sky Player HTML."
+            statusView.text = "Apri un canale dal DAVIX Player."
             return
         }
 

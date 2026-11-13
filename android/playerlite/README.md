@@ -1,6 +1,6 @@
-# Sky Player Lite
+# DAVIX Player
 
-App Android nativa e autonoma per la riproduzione di singoli flussi HLS ricevuti da Sky Player HTML.
+App Android nativa e autonoma per la riproduzione di singoli flussi HLS ricevuti da DAVIX Player HTML.
 
 - Package: `it.davidealpegiani.skylite`
 - Deep link: `skylite://play?url=<URL-ENCODED>&name=<NAME-ENCODED>`
@@ -9,6 +9,6 @@ App Android nativa e autonoma per la riproduzione di singoli flussi HLS ricevuti
 - Offset live obiettivo: 45 secondi (limiti 30–90 secondi)
 - Nessun estrattore playlist, Google Cast o pulsante Trasmetti.
 
-La build debug viene generata insieme a Sky Extractor da GitHub Actions. Dopo il merge su `main`, l'APK Lite viene anche pubblicata nella release stabile `player-lite-latest`.
+La build debug viene generata insieme a DAVIX Extractor da GitHub Actions. Dopo il merge su `main`, l'APK Lite viene anche pubblicata nella release stabile `player-lite-latest`.
 
 Le soglie di buffer sono obiettivi del client e non possono compensare segmenti mancanti, URL scaduti o limitazioni della sorgente.
