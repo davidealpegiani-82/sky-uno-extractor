@@ -54,7 +54,7 @@ assert.match(template, /maxMaxBufferLength:90/);
 assert.match(template, /fullscreenBtn/);
 assert.match(template, /videoStage\.requestFullscreen/);
 assert.match(template, /scheme=skylite;package=it\.davidealpegiani\.skylite/);
-assert.match(template, /Sky-Player-Lite\.apk/);
+assert.match(template, /DAVIX-Player\.apk/);
 assert.doesNotMatch(template, /cast_sender|cast\.framework|castBtn|Google Cast|Trasmetti/i, 'exported player must not contain Cast');
 assert.match(kotlin, /setBufferDurationsMs\(\s*40_000,[\s\S]*?120_000,[\s\S]*?12_000,[\s\S]*?40_000[\s\S]*?\)/);
 assert.match(kotlin, /setBufferDurationsMs\(\s*40_000,[\s\S]*?120_000,[\s\S]*?12_000,[\s\S]*?40_000[\s\S]*?\)/);
