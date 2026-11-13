@@ -177,7 +177,7 @@ class MainActivity : FragmentActivity() {
                     else -> "type-" + mediaLoadData.dataType
                 }
                 Log.d(
-                    "SkyHLS",
+                    "DAVIX-HLS",
                     "load start=" + kind + " host=" + (loadEventInfo.dataSpec.uri.host ?: "?")
                 )
             }
@@ -193,7 +193,7 @@ class MainActivity : FragmentActivity() {
                     else -> "type-" + mediaLoadData.dataType
                 }
                 Log.d(
-                    "SkyHLS",
+                    "DAVIX-HLS",
                     "load=" + kind + " host=" + (loadEventInfo.dataSpec.uri.host ?: "?") +
                         " bytes=" + loadEventInfo.bytesLoaded +
                         " durationMs=" + loadEventInfo.loadDurationMs
@@ -208,7 +208,7 @@ class MainActivity : FragmentActivity() {
                 wasCanceled: Boolean
             ) {
                 Log.w(
-                    "SkyHLS",
+                    "DAVIX-HLS",
                     "load error host=" + (loadEventInfo.dataSpec.uri.host ?: "?") +
                         " canceled=" + wasCanceled + " " +
                         error.javaClass.simpleName + ": " +
@@ -238,7 +238,7 @@ class MainActivity : FragmentActivity() {
                     .map { it.replace(Regex("https?://\\S+"), "[indirizzo omesso]") }
                     .joinToString(" → ")
                 Log.e(
-                    "SkyHLS",
+                    "DAVIX-HLS",
                     "player error code=" + error.errorCodeName +
                         " positionMs=" + player.currentPosition +
                         " bufferedMs=" + player.totalBufferedDuration +
@@ -259,7 +259,7 @@ class MainActivity : FragmentActivity() {
                             // Un seek è necessario solo se ExoPlayer segnala esplicitamente
                             // BEHIND_LIVE_WINDOW: mai durante un normale buffering.
                             if (error.errorCodeName.contains("BEHIND_LIVE_WINDOW")) {
-                                Log.w("SkyHLS", "live window persa: riallineamento al punto live predefinito")
+                                Log.w("DAVIX-HLS", "live window persa: riallineamento al punto live predefinito")
                                 player.seekToDefaultPosition()
                             }
                             player.prepare()
@@ -436,7 +436,7 @@ class MainActivity : FragmentActivity() {
         setContentView(mainContainer)
 
         val title = TextView(this).apply {
-            text = "SKY EXTRACTOR"
+            text = "DAVIX EXTRACTOR"
             textSize = 23f
             setTextColor(Color.WHITE)
             setTypeface(null, android.graphics.Typeface.BOLD)
@@ -487,9 +487,9 @@ class MainActivity : FragmentActivity() {
         button("⬇  Esporta player HTML", true) { requestHtmlExport() }
         label("Suggerimento: tocca il nome di un canale per riprodurlo; usa la casella per includerlo o escluderlo dall'esportazione.", MUTED, 12f)
 
-        section("4 · SKY CLOUD SYNC")
+        section("4 · DAVIX CLOUD SYNC")
         label("Pubblica la configurazione selezionata per renderla disponibile ai soli Player che autorizzi. Il servizio trasferisce la lista, mai il video.", MUTED, 12f)
-        button("⚙  Configura Sky Cloud Sync", false) { showCloudSyncSettings() }
+        button("⚙  Configura DAVIX Cloud Sync", false) { showCloudSyncSettings() }
         button("☁  Pubblica aggiornamento remoto", true) { publishRemoteConfiguration() }
         val adminRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         adminRow.addView(buttonView("Genera codice") { approveCloudPlayer() }, LinearLayout.LayoutParams(0, dp(46), 1f))
@@ -519,7 +519,7 @@ class MainActivity : FragmentActivity() {
         content.addView(labelForDialog("Chiave amministratore · viene salvata cifrata nel dispositivo"))
         content.addView(adminKey)
         AlertDialog.Builder(this)
-            .setTitle("Configurazione Sky Cloud Sync")
+            .setTitle("Configurazione DAVIX Cloud Sync")
             .setView(content)
             .setNegativeButton("Annulla", null)
             .setPositiveButton("Salva", null)
@@ -551,7 +551,7 @@ class MainActivity : FragmentActivity() {
     }
 
     private fun runCloudAdminTask(task: () -> JSONObject, onSuccess: (JSONObject) -> Unit) {
-        status.text = "Connessione a Sky Cloud Sync…"
+        status.text = "Connessione a DAVIX Cloud Sync…"
         Thread {
             try {
                 val result = task()
@@ -624,7 +624,7 @@ class MainActivity : FragmentActivity() {
                     .setView(content)
                     .setPositiveButton("Copia codice") { _, _ ->
                         val clipboard = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                        clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Codice Sky Player", code))
+                        clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Codice DAVIX Player", code))
                         toast("Codice copiato. Comunicalo al dispositivo da attivare.")
                     }
                     .setNegativeButton("Chiudi", null)
@@ -1100,7 +1100,7 @@ class MainActivity : FragmentActivity() {
                         val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
                             addCategory(Intent.CATEGORY_OPENABLE)
                             type = "text/html"
-                            putExtra(Intent.EXTRA_TITLE, "sky-uno-player.html")
+                            putExtra(Intent.EXTRA_TITLE, "davix-player.html")
                         }
                         status.text = "Playlist pubblicata · ${result.optInt("channelCount")} canali. Scegli dove salvare il file HTML."
                         startActivityForResult(intent, SAVE_HTML)
@@ -1117,7 +1117,7 @@ class MainActivity : FragmentActivity() {
             .bufferedReader(StandardCharsets.UTF_8)
             .use { it.readText() }
         check(!template.contains("__CHANNELS__") && template.contains("__CLOUD_SYNC_URL__")) {
-            "Modello Sky Player non valido: i canali non devono essere incorporati e il segnaposto Cloud Sync è obbligatorio."
+            "Modello DAVIX Player non valido: i canali non devono essere incorporati e il segnaposto Cloud Sync è obbligatorio."
         }
         return template.replace("__CLOUD_SYNC_URL__", JSONObject.quote(CloudSyncAdmin.baseUrl(this)))
     }
