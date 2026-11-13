@@ -88,6 +88,7 @@ class MainActivity : Activity() {
             diagnosticsView.text = "HLS: $state · buffer ${aheadMs / 1000}s · " +
                 (if (current.isLoading) "download attivo" else "download in attesa") +
                 " · $lastHlsLoad"
+            monitorPlaybackHealth(current, now, aheadMs)
             retryHandler.postDelayed(this, 1000L)
         }
     }
@@ -114,6 +115,10 @@ class MainActivity : Activity() {
     private var lastChannelClickAt = 0L
     private lateinit var hlsHttpDataSourceFactory: DefaultHttpDataSource.Factory
     private var defaultHlsUserAgent: String = ""
+    private var selectedChannelForRecovery: CloudChannel? = null
+    private var bufferingStartedAt = 0L
+    private var lastPlaybackProgressAt = 0L
+    private var lastObservedPositionMs = C.TIME_UNSET
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -690,6 +695,9 @@ class MainActivity : Activity() {
 
     private fun stopPlaybackForAuthorization() {
         retryTask?.let { retryHandler.removeCallbacks(it) }
+        retryTask = null
+        selectedChannelForRecovery = null
+        bufferingStartedAt = 0L
         player?.apply { stop(); clearMediaItems() }
         titleView.text = "DAVIX PLAYER"
         statusView.text = "Attivazione richiesta"
@@ -727,25 +735,17 @@ class MainActivity : Activity() {
         }
         titleView.text = channel.name
         statusView.text = "Connessione al flusso…"
-        val item = MediaItem.Builder()
-            .setUri(parsed)
-            .setMimeType(MimeTypes.APPLICATION_M3U8)
-            .setLiveConfiguration(
-                MediaItem.LiveConfiguration.Builder()
-                    .setTargetOffsetMs(45_000)
-                    .setMinOffsetMs(30_000)
-                    .setMaxOffsetMs(90_000)
-                    .setMinPlaybackSpeed(0.97f)
-                    .setMaxPlaybackSpeed(1.03f)
-                    .build()
-            )
-            .build()
+        selectedChannelForRecovery = channel
+        bufferingStartedAt = System.currentTimeMillis()
+        lastPlaybackProgressAt = bufferingStartedAt
+        lastObservedPositionMs = C.TIME_UNSET
         retryTask?.let { retryHandler.removeCallbacks(it) }
+        retryTask = null
         retryCount = 0
         player?.apply {
             stop()
             clearMediaItems()
-            setMediaItem(item)
+            setMediaItem(createLiveMediaItem(parsed))
             prepare()
             playWhenReady = true
         }
@@ -931,13 +931,105 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun createLiveMediaItem(uri: Uri): MediaItem =
+        MediaItem.Builder()
+            .setUri(uri)
+            .setMimeType(MimeTypes.APPLICATION_M3U8)
+            .setLiveConfiguration(
+                MediaItem.LiveConfiguration.Builder()
+                    .setTargetOffsetMs(60_000)
+                    .setMinOffsetMs(45_000)
+                    .setMaxOffsetMs(120_000)
+                    .setMinPlaybackSpeed(0.97f)
+                    .setMaxPlaybackSpeed(1.04f)
+                    .build()
+            )
+            .build()
+
+    /**
+     * Controllo di salute indipendente dagli eventi ExoPlayer: intercetta anche
+     * i casi in cui la riproduzione resta apparentemente pronta ma il tempo non avanza.
+     */
+    private fun monitorPlaybackHealth(current: ExoPlayer, now: Long, bufferedAheadMs: Long) {
+        if (!current.playWhenReady || current.mediaItemCount == 0 ||
+            selectedChannelForRecovery == null || isFinishing || isDestroyed) {
+            bufferingStartedAt = 0L
+            lastPlaybackProgressAt = now
+            lastObservedPositionMs = current.currentPosition
+            return
+        }
+
+        val position = current.currentPosition
+        if (lastObservedPositionMs == C.TIME_UNSET || position > lastObservedPositionMs + 250L) {
+            lastObservedPositionMs = position
+            lastPlaybackProgressAt = now
+        }
+
+        when (current.playbackState) {
+            Player.STATE_BUFFERING -> {
+                if (bufferingStartedAt == 0L) bufferingStartedAt = now
+                // Lascia terminare i timeout HTTP e i retry interni di Media3 prima
+                // di riavviare la playlist dall'ultimo live edge disponibile.
+                if (now - bufferingStartedAt >= 65_000L && bufferedAheadMs < 2_000L) {
+                    schedulePlaybackRecovery("Buffer esaurito: ripristino automatico")
+                }
+            }
+            Player.STATE_READY -> {
+                bufferingStartedAt = 0L
+                if (bufferedAheadMs < 2_000L && now - lastPlaybackProgressAt >= 20_000L) {
+                    schedulePlaybackRecovery("Flusso fermo: riaggancio automatico")
+                }
+            }
+            Player.STATE_ENDED, Player.STATE_IDLE -> {
+                if (now - lastPlaybackProgressAt >= 5_000L) {
+                    schedulePlaybackRecovery("Flusso terminato o inattivo: riconnessione")
+                }
+            }
+        }
+    }
+
+    /**
+     * Retry persistente con backoff limitato: non abbandona il canale dopo N errori.
+     * Il nuovo prepare parte dal live edge, evitando segmenti HLS ormai scaduti.
+     */
+    private fun schedulePlaybackRecovery(reason: String) {
+        if (retryTask != null || !PlayerCloudSync.hasValidLease(this)) return
+        val channel = selectedChannelForRecovery ?: return
+        val current = player ?: return
+        if (!current.playWhenReady || isFinishing || isDestroyed) return
+
+        val delays = longArrayOf(2_000L, 4_000L, 8_000L, 15_000L, 30_000L, 45_000L, 60_000L)
+        val delay = delays[retryCount.coerceAtMost(delays.lastIndex)]
+        retryCount = (retryCount + 1).coerceAtMost(10_000)
+        statusView.text = "$reason · tentativo automatico tra ${delay / 1000}s"
+
+        val task = Runnable {
+            retryTask = null
+            val activePlayer = player ?: return@Runnable
+            if (!activePlayer.playWhenReady || !PlayerCloudSync.hasValidLease(this) ||
+                selectedChannelForRecovery?.url != channel.url) return@Runnable
+
+            bufferingStartedAt = System.currentTimeMillis()
+            lastPlaybackProgressAt = bufferingStartedAt
+            lastObservedPositionMs = C.TIME_UNSET
+            statusView.text = "Riconnessione a ${channel.name}…"
+            activePlayer.stop()
+            activePlayer.clearMediaItems()
+            activePlayer.setMediaItem(createLiveMediaItem(Uri.parse(channel.url)))
+            activePlayer.prepare()
+            activePlayer.playWhenReady = true
+        }
+        retryTask = task
+        retryHandler.postDelayed(task, delay)
+    }
+
     private fun initializePlayer() {
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                40_000,
-                120_000,
-                12_000,
-                40_000
+                60_000,
+                180_000,
+                15_000,
+                45_000
             )
             .setPrioritizeTimeOverSizeThresholds(true)
             .build()
@@ -960,11 +1052,11 @@ class MainActivity : Activity() {
         val liveSpeedControl = DefaultLivePlaybackSpeedControl.Builder()
             .setFallbackMinPlaybackSpeed(0.97f)
             .setFallbackMaxPlaybackSpeed(1.03f)
-            .setTargetLiveOffsetIncrementOnRebufferMs(10_000)
+            .setTargetLiveOffsetIncrementOnRebufferMs(15_000)
             .build()
 
         val mediaSourceFactory = HlsMediaSource.Factory(hlsHttpDataSourceFactory)
-            .setLoadErrorHandlingPolicy(DefaultLoadErrorHandlingPolicy(6))
+            .setLoadErrorHandlingPolicy(DefaultLoadErrorHandlingPolicy(8))
 
         player = ExoPlayer.Builder(this)
             .setLoadControl(loadControl)
@@ -1026,31 +1118,23 @@ class MainActivity : Activity() {
                         val retryable = error.errorCodeName.contains("IO_") ||
                             error.errorCodeName.contains("TIMEOUT") ||
                             error.errorCodeName.contains("BEHIND_LIVE_WINDOW")
-                        val delays = longArrayOf(2_000L, 4_000L, 8_000L, 12_000L, 15_000L)
-                        if (retryable && retryCount < delays.size) {
-                            val delay = delays[retryCount++]
-                            statusView.text = "Connessione instabile. Nuovo tentativo tra ${delay / 1000} s…"
-                            retryTask?.let { retryHandler.removeCallbacks(it) }
-                            val task = Runnable {
-                                val current = player ?: return@Runnable
-                                if (error.errorCodeName.contains("BEHIND_LIVE_WINDOW")) {
-                                    current.seekToDefaultPosition()
-                                }
-                                current.prepare()
-                                current.playWhenReady = true
-                            }
-                            retryTask = task
-                            retryHandler.postDelayed(task, delay)
+                        if (retryable) {
+                            bufferingStartedAt = System.currentTimeMillis()
+                            schedulePlaybackRecovery("Errore ${error.errorCodeName}: ripristino")
                         } else {
-                            statusView.text = "Errore di riproduzione: ${error.errorCodeName}. Riprova il canale."
+                            statusView.text = "Errore non recuperabile: ${error.errorCodeName}"
                         }
                     }
 
                     override fun onIsPlayingChanged(isPlaying: Boolean) {
                         if (isPlaying) {
+                            lastPlaybackProgressAt = System.currentTimeMillis()
+                            bufferingStartedAt = 0L
                             retryHandler.postDelayed({
                                 if (player?.isPlaying == true) retryCount = 0
-                            }, 30_000L)
+                            }, 60_000L)
+                        } else if (player?.playWhenReady == true && bufferingStartedAt == 0L) {
+                            bufferingStartedAt = System.currentTimeMillis()
                         }
                     }
                 })
@@ -1117,27 +1201,19 @@ class MainActivity : Activity() {
 
         titleView.text = channelName
         statusView.text = "Connessione al flusso…"
-        val mediaItem = MediaItem.Builder()
-            .setUri(parsed)
-            .setMimeType(MimeTypes.APPLICATION_M3U8)
-            .setLiveConfiguration(
-                MediaItem.LiveConfiguration.Builder()
-                    .setTargetOffsetMs(45_000)
-                    .setMinOffsetMs(30_000)
-                    .setMaxOffsetMs(90_000)
-                    .setMinPlaybackSpeed(0.97f)
-                    .setMaxPlaybackSpeed(1.03f)
-                    .build()
-            )
-            .build()
         // Usa la stessa MediaSourceFactory HLS configurata in initializePlayer().
         // Il MIME esplicito evita ambiguità con flussi HLS senza estensione .m3u8.
+        selectedChannelForRecovery = CloudChannel(channelName, streamUrl)
+        bufferingStartedAt = System.currentTimeMillis()
+        lastPlaybackProgressAt = bufferingStartedAt
+        lastObservedPositionMs = C.TIME_UNSET
         retryTask?.let { retryHandler.removeCallbacks(it) }
+        retryTask = null
         retryCount = 0
         player?.apply {
             stop()
             clearMediaItems()
-            setMediaItem(mediaItem)
+            setMediaItem(createLiveMediaItem(parsed))
             prepare()
             playWhenReady = true
         }

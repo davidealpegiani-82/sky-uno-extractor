@@ -126,16 +126,13 @@ class MainActivity : FragmentActivity() {
         window.navigationBarColor = BG
         window.decorView.systemUiVisibility = 0
         // Profilo scelto dopo il confronto delle revisioni:
-        // 30-90 s di buffer, avvio a 6 s e ripresa a 15 s.
-        // Non si forza un target 120 s: per un live la finestra reale della
-        // playlist e l'offset dal live edge limitano i segmenti effettivamente scaricabili.
-        // Buffer più ampio per assorbire le pause di rete; il live edge limita comunque quanto è scaricabile.
+        // Profilo live allineato al Player Lite: riserva ampia senza inseguire il live edge.
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                40_000, // soglia minima di caricamento: mantenere una riserva consistente
-                120_000, // obiettivo massimo di buffer per assorbire oscillazioni prolungate
-                12_000, // avvio iniziale
-                40_000 // ripresa dopo un vero esaurimento del buffer
+                60_000, // soglia minima di caricamento
+                180_000, // tetto temporale per assorbire oscillazioni di rete
+                15_000, // avvio iniziale
+                45_000 // ripresa dopo esaurimento del buffer
             )
             .setPrioritizeTimeOverSizeThresholds(true)
             .build()
@@ -144,8 +141,8 @@ class MainActivity : FragmentActivity() {
         // player smette di inseguire segmenti pubblicati in ritardo dal server.
         val liveSpeedControl = DefaultLivePlaybackSpeedControl.Builder()
             .setFallbackMinPlaybackSpeed(0.97f)
-            .setFallbackMaxPlaybackSpeed(1.03f)
-            .setTargetLiveOffsetIncrementOnRebufferMs(10_000)
+            .setFallbackMaxPlaybackSpeed(1.04f)
+            .setTargetLiveOffsetIncrementOnRebufferMs(15_000)
             .build()
 
         // Timeout espliciti e retry progressivi gestiti da Media3.
@@ -155,7 +152,7 @@ class MainActivity : FragmentActivity() {
             .setAllowCrossProtocolRedirects(true)
 
         val hlsMediaSourceFactory = HlsMediaSource.Factory(httpDataSourceFactory)
-            .setLoadErrorHandlingPolicy(DefaultLoadErrorHandlingPolicy(6))
+            .setLoadErrorHandlingPolicy(DefaultLoadErrorHandlingPolicy(8))
 
         localPlayer = ExoPlayer.Builder(this)
             .setLoadControl(loadControl)
@@ -325,9 +322,9 @@ class MainActivity : FragmentActivity() {
                 .setMediaMetadata(MediaMetadata.Builder().setTitle(channelName).build())
                 .setLiveConfiguration(
                     MediaItem.LiveConfiguration.Builder()
-                        .setTargetOffsetMs(45_000)
-                        .setMinOffsetMs(30_000)
-                        .setMaxOffsetMs(90_000)
+                        .setTargetOffsetMs(60_000)
+                        .setMinOffsetMs(45_000)
+                        .setMaxOffsetMs(120_000)
                         .setMinPlaybackSpeed(0.97f)
                         .setMaxPlaybackSpeed(1.03f)
                         .build()
