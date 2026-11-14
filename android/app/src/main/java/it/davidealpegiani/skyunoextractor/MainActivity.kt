@@ -68,6 +68,11 @@ class MainActivity : FragmentActivity() {
     private val channels = mutableListOf<TvChannel>()
     private val categories = mutableListOf("Intrattenimento", "Sport", "Cinema", "Documentari", "Musica", "XXX", "Non classificati")
     private val categoryPrefs by lazy { getSharedPreferences("davix_extractor_categories", MODE_PRIVATE) }
+    // Selezione multipla separata dalla selezione di esportazione.
+    private var bulkSelectionMode = false
+    private val bulkSelectedIndices = mutableSetOf<Int>()
+    // null = conserva i group-title originali della playlist.
+    private var pendingImportCategory: String? = null
     private lateinit var mainContainer: LinearLayout
     private lateinit var root: LinearLayout
     private lateinit var selectedList: LinearLayout
@@ -448,7 +453,7 @@ class MainActivity : FragmentActivity() {
 
         section("1 · CARICA LA PLAYLIST")
         label("Seleziona file HTML, HTM, TXT, M3U, M3U8 o JSON. I file vengono letti direttamente sul dispositivo.", MUTED)
-        button("📂  Seleziona file", true) { openPicker() }
+        button("📂  Seleziona file", true) { showImportDestinationDialog() }
         status = label("Nessun file caricato.", MUTED)
 
         section("2 · PLAYLIST SALVATE")
@@ -465,8 +470,17 @@ class MainActivity : FragmentActivity() {
         row.addView(space(8), LinearLayout.LayoutParams(dp(8), 1))
         row.addView(buttonView("Deseleziona") { channels.forEach { it.selected = false }; renderChannels() }, LinearLayout.LayoutParams(0, dp(46), 1f))
         root.addView(row)
-        button("▦  Gestisci categorie", false) { showCategoryManager() }
-        label("Crea le tue sezioni e assegna ogni canale alla categoria desiderata.", MUTED, 12f)
+        button("▦  Gestisci categorie e sottocartelle", false) { showCategoryManager() }
+        label("Usa il formato Sezione > Sottosezione, ad esempio Intrattenimento > Cinema.", MUTED, 12f)
+        val bulkActions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        bulkActions.addView(buttonView("☑  Selezione multipla") {
+            bulkSelectionMode = !bulkSelectionMode
+            if (!bulkSelectionMode) bulkSelectedIndices.clear()
+            renderChannels()
+        }, LinearLayout.LayoutParams(0, dp(46), 1f))
+        bulkActions.addView(space(8), LinearLayout.LayoutParams(dp(8), 1))
+        bulkActions.addView(buttonView("Sposta selezionati") { moveBulkSelectedChannels() }, LinearLayout.LayoutParams(0, dp(46), 1f))
+        root.addView(bulkActions)
 
         selectedHeading = TextView(this).apply {
             text = "✓  SELEZIONATI PER ESPORTAZIONE"
@@ -817,6 +831,44 @@ class MainActivity : FragmentActivity() {
         }
     }
 
+    private fun showImportDestinationDialog() {
+        val options = listOf("Mantieni i gruppi originali della playlist") +
+            categories.filter { it != "Non classificati" } +
+            "＋  Crea nuova sezione o sottocartella…"
+        AlertDialog.Builder(this)
+            .setTitle("Destinazione dell'importazione")
+            .setMessage("Scegli dove inserire i canali. Puoi mantenere i group-title originali oppure assegnare tutto a una sezione.")
+            .setItems(options.toTypedArray()) { _, which ->
+                when {
+                    which == 0 -> { pendingImportCategory = null; openPicker() }
+                    which == options.lastIndex -> promptNewCategoryForImport()
+                    else -> { pendingImportCategory = options[which]; openPicker() }
+                }
+            }
+            .setNegativeButton("Annulla", null)
+            .show()
+    }
+
+    private fun promptNewCategoryForImport() {
+        val input = EditText(this).apply {
+            hint = "Intrattenimento > Cinema"
+            setSingleLine(true)
+            filters = arrayOf(android.text.InputFilter.LengthFilter(80))
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Nuova sezione / sottocartella")
+            .setMessage("Per creare una sottocartella usa il formato Sezione > Sottosezione.")
+            .setView(input)
+            .setNegativeButton("Annulla", null)
+            .setPositiveButton("Continua") { _, _ ->
+                val path = normalizeCategoryPath(input.text.toString())
+                if (path.isBlank()) { toast("Inserisci un nome valido."); return@setPositiveButton }
+                if (categories.none { it.equals(path, true) }) categories.add(path)
+                pendingImportCategory = path
+                openPicker()
+            }.show()
+    }
+
     private fun importUris(uris: List<Uri>) {
         var added = 0
         var duplicates = 0
@@ -828,6 +880,10 @@ class MainActivity : FragmentActivity() {
                 val displayName = queryDisplayName(uri)
                 val found = parseChannels(text)
                 restoreChannelCategories(found)
+                pendingImportCategory?.let { destination ->
+                    found.forEach { it.category = destination }
+                    if (destination !in categories) categories.add(destination)
+                }
                 if (found.isEmpty()) {
                     invalid++
                 } else {
@@ -844,6 +900,7 @@ class MainActivity : FragmentActivity() {
                 }
             } catch (_: Exception) { invalid++ }
         }
+        pendingImportCategory = null
         renderChannels()
         renderSavedPlaylists()
         status.text = "File analizzati: ${uris.size} · Nuovi canali: $added · Duplicati ignorati: $duplicates · File senza canali validi: $invalid"
@@ -1076,6 +1133,18 @@ class MainActivity : FragmentActivity() {
                 }
             }
             row.addView(check)
+            if (bulkSelectionMode) {
+                val bulkCheck = CheckBox(this).apply {
+                    isChecked = index in bulkSelectedIndices
+                    contentDescription = "Seleziona canale per lo spostamento"
+                    buttonTintList = android.content.res.ColorStateList.valueOf(0xFFFFC857.toInt())
+                    setOnCheckedChangeListener { _, checked ->
+                        if (checked) bulkSelectedIndices.add(index) else bulkSelectedIndices.remove(index)
+                        updateCount()
+                    }
+                }
+                row.addView(bulkCheck)
+            }
             val play = Button(this).apply {
                 text = "▶  ${channel.name}"
                 isAllCaps = false
@@ -1096,18 +1165,60 @@ class MainActivity : FragmentActivity() {
         updateCount()
     }
 
+    private fun moveBulkSelectedChannels() {
+        if (bulkSelectedIndices.isEmpty()) {
+            toast("Seleziona prima i canali da spostare.")
+            return
+        }
+        val options = categories.filter { it != "Non classificati" } + "＋  Crea nuova sezione / sottocartella…"
+        AlertDialog.Builder(this)
+            .setTitle("Sposta \${bulkSelectedIndices.size} canali in")
+            .setItems(options.toTypedArray()) { _, which ->
+                if (which == options.lastIndex) {
+                    val input = EditText(this).apply {
+                        hint = "Intrattenimento > Cinema"
+                        setSingleLine(true)
+                        filters = arrayOf(android.text.InputFilter.LengthFilter(80))
+                    }
+                    AlertDialog.Builder(this).setTitle("Destinazione personalizzata").setView(input)
+                        .setNegativeButton("Annulla", null)
+                        .setPositiveButton("Sposta") { _, _ ->
+                            val path = normalizeCategoryPath(input.text.toString())
+                            if (path.isBlank()) { toast("Percorso non valido."); return@setPositiveButton }
+                            applyBulkCategory(path)
+                        }.show()
+                } else applyBulkCategory(options[which])
+            }
+            .setNegativeButton("Annulla", null)
+            .show()
+    }
+
+    private fun applyBulkCategory(path: String) {
+        if (path !in categories) categories.add(path)
+        bulkSelectedIndices.toList().forEach { index -> channels.getOrNull(index)?.category = path }
+        val moved = bulkSelectedIndices.size
+        bulkSelectedIndices.clear()
+        bulkSelectionMode = false
+        renderChannels()
+        toast("\$moved canali spostati in \$path")
+    }
+
+    private fun normalizeCategoryPath(raw: String): String =
+        raw.split(">").map { it.trim().replace(Regex("\\\\s+"), " ") }
+            .filter { it.isNotBlank() }.joinToString(" > ").take(80)
+
     private fun showCategoryManager() {
-        val options = listOf("＋  Nuova categoria") + categories.filter { it != "Non classificati" }
+        val options = listOf("＋  Nuova sezione / sottocartella") + categories.filter { it != "Non classificati" }
         AlertDialog.Builder(this).setTitle("Gestisci categorie").setItems(options.toTypedArray()) { _, index ->
             if (index == 0) promptNewCategory() else showCategoryActions(options[index])
         }.setNegativeButton("Chiudi", null).show()
     }
 
     private fun promptNewCategory(assignTo: TvChannel? = null) {
-        val input = EditText(this).apply { hint = "Nome categoria"; setSingleLine(true); filters = arrayOf(android.text.InputFilter.LengthFilter(40)) }
+        val input = EditText(this).apply { hint = "Intrattenimento > Cinema"; setSingleLine(true); filters = arrayOf(android.text.InputFilter.LengthFilter(80)) }
         AlertDialog.Builder(this).setTitle("Nuova categoria").setView(input).setNegativeButton("Annulla", null)
             .setPositiveButton("Crea") { _, _ ->
-                val name = input.text.toString().trim().replace(Regex("\\s+"), " ")
+                val name = normalizeCategoryPath(input.text.toString())
                 if (name.isBlank() || categories.any { it.equals(name, true) }) { toast("Nome vuoto o categoria già esistente."); return@setPositiveButton }
                 categories.add(name); assignTo?.category = name; renderChannels(); toast("Categoria creata: $name")
             }.show()
@@ -1143,7 +1254,7 @@ class MainActivity : FragmentActivity() {
         val saved = categoryPrefs.getString("categories_json", null)
         if (!saved.isNullOrBlank()) runCatching {
             val array = JSONArray(saved)
-            val loaded = (0 until array.length()).map { array.optString(it).trim() }.filter { it.isNotBlank() && it.length <= 40 }.distinct()
+            val loaded = (0 until array.length()).map { normalizeCategoryPath(array.optString(it)) }.filter { it.isNotBlank() && it.length <= 80 }.distinct()
             if (loaded.isNotEmpty()) { categories.clear(); categories.addAll(loaded) }
         }
         if ("Non classificati" !in categories) categories.add("Non classificati")
@@ -1153,7 +1264,7 @@ class MainActivity : FragmentActivity() {
         val mapping = runCatching { JSONObject(categoryPrefs.getString("channel_categories_json", "{}") ?: "{}") }.getOrNull() ?: return
         items.forEach { channel ->
             val savedCategory = mapping.optString(channel.url)
-            if (savedCategory.isNotBlank() && categories.any { it.equals(savedCategory, true) }) channel.category = savedCategory
+            if (savedCategory.isNotBlank()) channel.category = normalizeCategoryPath(savedCategory)
             if (channel.category !in categories) categories.add(channel.category)
         }
     }
