@@ -129,11 +129,11 @@ assert.match(extractor, /Dispositivi revocati/, 'device manager must show a dedi
 assert.match(extractor, /private fun confirmClearSavedPlaylists\(/, 'saved playlist library must have a clear action');
 assert.match(extractor, /Svuota archivio e lista canali/, 'clear action must be visible in the UI');
 
-assert.match(kotlin, /showImportDestinationDialog\\(/, 'Extractor must ask for the destination before import');
-assert.match(kotlin, /bulkSelectedIndices/, 'Bulk selection must be independent from export selection');
-assert.match(kotlin, /moveBulkSelectedChannels\\(/, 'Extractor must support moving selected channels together');
-assert.match(kotlin, /normalizeCategoryPath/, 'Category paths must support nested sections');
-assert.match(lite, /addGroupedChannelSections\\(/, 'Player Lite must render nested categories');
-assert.match(template, /const roots=/, 'HTML Player must render category trees');
-assert.match(cloudSync, /channel\\.category\\.length > 80/, 'Cloud Sync must accept nested category paths');
-assert.match(cloudSync, /category\\.length <= 80/, 'Cloud Sync category metadata must accept nested paths');
+assert.ok(kotlin.includes("showImportDestinationDialog("), 'Extractor must ask for the destination before import');
+assert.ok(kotlin.includes("bulkSelectedIndices"), 'Bulk selection must be independent from export selection');
+assert.ok(kotlin.includes("moveBulkSelectedChannels("), 'Extractor must support moving selected channels together');
+assert.ok(kotlin.includes("normalizeCategoryPath"), 'Category paths must support nested sections');
+assert.ok(lite.includes("addGroupedChannelSections("), 'Player Lite must render nested categories');
+assert.ok(template.includes("const roots="), 'HTML Player must render category trees');
+assert.ok(cloudSync.includes("channel.category.length > 80"), 'Cloud Sync must accept nested category paths');
+assert.ok(cloudSync.includes("category.length <= 80"), 'Cloud Sync category metadata must accept nested paths');
