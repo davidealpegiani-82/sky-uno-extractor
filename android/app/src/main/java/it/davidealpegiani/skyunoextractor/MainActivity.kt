@@ -1207,7 +1207,7 @@ class MainActivity : FragmentActivity() {
     }
 
     private fun normalizeCategoryPath(raw: String): String =
-        raw.split(">").map { it.trim().replace(Regex("\\\\s+"), " ") }
+        raw.split(">").map { it.trim().replace(Regex("\\s+"), " ") }
             .filter { it.isNotBlank() }.joinToString(" > ").take(80)
 
     private fun showCategoryManager() {
@@ -1236,18 +1236,42 @@ class MainActivity : FragmentActivity() {
 
     private fun showCategoryActions(category: String) {
         AlertDialog.Builder(this).setTitle(category).setItems(arrayOf("Rinomina", "Elimina")) { _, action ->
+            val prefix = "$category > "
             if (action == 0) {
-                val input = EditText(this).apply { setText(category); setSingleLine(true); filters = arrayOf(android.text.InputFilter.LengthFilter(40)) }
-                AlertDialog.Builder(this).setTitle("Rinomina categoria").setView(input).setNegativeButton("Annulla", null)
+                val input = EditText(this).apply {
+                    setText(category)
+                    setSingleLine(true)
+                    filters = arrayOf(android.text.InputFilter.LengthFilter(80))
+                }
+                AlertDialog.Builder(this).setTitle("Rinomina sezione / sottocartella").setView(input)
+                    .setNegativeButton("Annulla", null)
                     .setPositiveButton("Salva") { _, _ ->
-                        val renamed = input.text.toString().trim().replace(Regex("\\s+"), " ")
-                        if (renamed.isBlank() || categories.any { it != category && it.equals(renamed, true) }) toast("Nome vuoto o già utilizzato.")
-                        else { categories[categories.indexOf(category)] = renamed; channels.filter { it.category == category }.forEach { it.category = renamed }; renderChannels() }
+                        val renamed = normalizeCategoryPath(input.text.toString())
+                        val conflict = categories.any { it != category && it.equals(renamed, true) }
+                        if (renamed.isBlank() || conflict) {
+                            toast("Nome vuoto o già utilizzato.")
+                        } else {
+                            categories.indices.forEach { i ->
+                                val current = categories[i]
+                                if (current == category) categories[i] = renamed
+                                else if (current.startsWith(prefix, true)) categories[i] = renamed + current.substring(category.length)
+                            }
+                            channels.forEach { channel ->
+                                if (channel.category == category) channel.category = renamed
+                                else if (channel.category.startsWith(prefix, true)) channel.category = renamed + channel.category.substring(category.length)
+                            }
+                            renderChannels()
+                        }
                     }.show()
             } else {
-                AlertDialog.Builder(this).setTitle("Eliminare $category?").setMessage("I canali verranno spostati in Non classificati.")
-                    .setNegativeButton("Annulla", null).setPositiveButton("Elimina") { _, _ ->
-                        categories.remove(category); channels.filter { it.category == category }.forEach { it.category = "Non classificati" }; renderChannels()
+                AlertDialog.Builder(this).setTitle("Eliminare $category?")
+                    .setMessage("I canali della sezione e delle relative sottocartelle verranno spostati in Non classificati.")
+                    .setNegativeButton("Annulla", null)
+                    .setPositiveButton("Elimina") { _, _ ->
+                        categories.removeAll { it == category || it.startsWith(prefix, true) }
+                        channels.filter { it.category == category || it.category.startsWith(prefix, true) }
+                            .forEach { it.category = "Non classificati" }
+                        renderChannels()
                     }.show()
             }
         }.setNegativeButton("Indietro", null).show()
