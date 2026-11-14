@@ -90,10 +90,11 @@ internal object CloudSyncAdmin {
         }
     }
 
-    fun publish(context: Context, channels: JSONArray): JSONObject {
+    fun publish(context: Context, channels: JSONArray, categories: JSONArray = JSONArray()): JSONObject {
         val payload = JSONObject()
             .put("schemaVersion", 1)
             .put("updateId", java.util.UUID.randomUUID().toString())
+            .put("categories", categories)
             .put("channels", channels)
         return adminRequest(context, "POST", "/v1/admin/config/publish", payload)
     }
