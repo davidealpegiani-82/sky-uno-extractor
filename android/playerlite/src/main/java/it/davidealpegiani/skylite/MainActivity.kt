@@ -536,16 +536,40 @@ class MainActivity : Activity() {
             addSectionHeading(target, "★ Preferiti", isCompact)
             favorites.forEach { channel -> addChannelItem(target, channel, isCompact) }
         }
-        val orderedCategories = (cloudCategories + cloudChannels.map { it.category })
-            .map { it.trim() }.filter { it.isNotBlank() }.distinct()
-        orderedCategories.forEach { category ->
-            val items = cloudChannels.filter { it.category.equals(category, true) }
-            if (items.isNotEmpty()) {
-                addSectionHeading(target, category, isCompact)
-                items.forEach { channel -> addChannelItem(target, channel, isCompact) }
+
+        // Le categorie gerarchiche arrivano come percorsi "Sezione > Sottosezione".
+        // Il player mantiene compatibilità con le vecchie categorie piatte.
+        val orderedPaths = (cloudCategories + cloudChannels.map { it.category })
+            .map { it.split(">").map(String::trim).filter(String::isNotBlank).joinToString(" > ") }
+            .filter { it.isNotBlank() }.distinct()
+        val roots = orderedPaths.map { it.substringBefore(" > ") }.distinct()
+        val rendered = mutableSetOf<String>()
+
+        roots.forEach { root ->
+            val rootItems = cloudChannels.filter { it.category.trim().equals(root, true) }
+            val childPaths = orderedPaths.filter { it.startsWith("$root > ", true) }
+                .sortedBy { it.lowercase() }
+            val childItemsExist = childPaths.any { path ->
+                cloudChannels.any { it.category.trim().equals(path, true) }
+            }
+            if (rootItems.isNotEmpty() || childItemsExist) {
+                addSectionHeading(target, root, isCompact)
+                rootItems.forEach { addChannelItem(target, it, isCompact) }
+                rendered.addAll(rootItems.map { it.url })
+                childPaths.forEach { path ->
+                    val items = cloudChannels.filter { it.category.trim().equals(path, true) }
+                    if (items.isNotEmpty()) {
+                        val depth = path.split(">").size - 1
+                        val leaf = path.substringAfterLast(">").trim()
+                        addSectionHeading(target, ("›  ".repeat(depth)) + leaf, isCompact)
+                        items.forEach { addChannelItem(target, it, isCompact) }
+                        rendered.addAll(items.map { it.url })
+                    }
+                }
             }
         }
-        val uncategorized = cloudChannels.filter { channel -> channel.category.isBlank() || orderedCategories.none { it.equals(channel.category, true) } }
+
+        val uncategorized = cloudChannels.filter { it.url !in rendered }
         if (uncategorized.isNotEmpty()) {
             addSectionHeading(target, "Non classificati", isCompact)
             uncategorized.forEach { channel -> addChannelItem(target, channel, isCompact) }
