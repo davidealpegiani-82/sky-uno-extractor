@@ -546,7 +546,7 @@ class MainActivity : Activity() {
             }
         }
         val known = orderedCategories.toSet()
-        val uncategorized = cloudChannels.filter { it.category.isBlank() || it.category !in known }
+        val uncategorized = cloudChannels.filter { channel -> channel.category.isBlank() || orderedCategories.none { it.equals(channel.category, true) } }
         if (uncategorized.isNotEmpty()) {
             addSectionHeading(target, "Non classificati", isCompact)
             uncategorized.forEach { channel -> addChannelItem(target, channel, isCompact) }
@@ -566,6 +566,10 @@ class MainActivity : Activity() {
         if (!favoriteUrls.add(channel.url)) favoriteUrls.remove(channel.url)
         playerPrefs.edit().putStringSet("favorite_urls", favoriteUrls.toSet()).apply()
         renderCloudChannels()
+        if (isTvDevice()) {
+            val container = if (isChannelDrawerOpen) fullscreenChannelList else channelsList
+            container.post { container.findViewWithTag<View>("favorite:${channel.url}")?.requestFocus() }
+        }
     }
 
     /**
@@ -651,6 +655,7 @@ class MainActivity : Activity() {
         }
         row.addView(live, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         val favorite = TextView(this).apply {
+            tag = "favorite:${channel.url}"
             text = if (channel.url in favoriteUrls) "★" else "☆"
             contentDescription = if (channel.url in favoriteUrls) "Rimuovi dai preferiti" else "Aggiungi ai preferiti"
             gravity = Gravity.CENTER
