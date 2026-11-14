@@ -1,0 +1,55 @@
+name: DAVIX Android build and checks
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "android/**"
+      - "cloud-sync/**"
+      - ".github/workflows/davix-android-build.yml"
+  push:
+    branches:
+      - "feat/davix-hierarchical-categories-tivimate-ui"
+
+permissions:
+  contents: read
+
+jobs:
+  verify-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Verify player template and category flows
+        run: node android/scripts/verify-player-template.mjs
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.13"
+
+      - name: Build DAVIX Extractor and Player Lite
+        working-directory: android
+        run: gradle --no-daemon :app:assembleDebug :playerlite:assembleDebug
+
+      - name: Upload installable debug APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: DAVIX-Android-APKs
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            android/app/build/outputs/apk/debug/app-debug.apk
+            android/playerlite/build/outputs/apk/debug/playerlite-debug.apk
