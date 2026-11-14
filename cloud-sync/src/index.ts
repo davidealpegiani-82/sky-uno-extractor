@@ -79,7 +79,7 @@ function validChannel(channel: any): channel is Channel {
     if (url.protocol !== "http:" && url.protocol !== "https:") return false;
   } catch { return false; }
   if (channel.logo != null && (typeof channel.logo !== "string" || channel.logo.length > 4096)) return false;
-  if (channel.category != null && (typeof channel.category !== "string" || channel.category.trim().length === 0 || channel.category.length > 40)) return false;
+  if (channel.category != null && (typeof channel.category !== "string" || channel.category.trim().length === 0 || channel.category.length > 80)) return false;
   if (channel.headers != null && (typeof channel.headers !== "object" || Array.isArray(channel.headers))) return false;
   return true;
 }
@@ -240,7 +240,7 @@ async function route(request: Request, env: Env): Promise<Response> {
         typeof body.updateId !== "string" || body.updateId.length < 8 || body.updateId.length > 100 ||
         !body.channels.every(validChannel) ||
         (body.categories != null && (!Array.isArray(body.categories) || body.categories.length > 100 ||
-          !body.categories.every((category: unknown) => typeof category === "string" && category.trim().length > 0 && category.length <= 40)))) {
+          !body.categories.every((category: unknown) => typeof category === "string" && category.trim().length > 0 && category.length <= 80)))) {
       return response({ error: "invalid_configuration" }, 400);
     }
     const categories = Array.isArray(body.categories)
