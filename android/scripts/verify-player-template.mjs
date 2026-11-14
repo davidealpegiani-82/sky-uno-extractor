@@ -98,6 +98,19 @@ assert.match(lite, /fullscreenChannelDrawer\.post \{[\s\S]*firstChannel[\s\S]*re
 assert.match(liteManifest, /LEANBACK_LAUNCHER/, 'Player Lite must be discoverable by Android TV launchers');
 assert.match(web, /android\/app\/src\/main\/assets\/player-template\.html/, 'web exporter must use the same template');
 assert.match(web, /async function playerHtml\(/);
+assert.match(kotlin, /private fun showCategoryManager\(/, 'Extractor must own category creation and editing');
+assert.match(kotlin, /private fun showCategoryPicker\(/, 'Extractor must allow assigning a channel to a category');
+assert.match(kotlin, /group-title=/, 'M3U group-title metadata must be imported as a starting category');
+assert.match(kotlin, /put\("category", channel.category\)/, 'Extractor exports each channel category');
+assert.match(kotlin, /categories_json/, 'Extractor must persist custom category definitions locally');
+assert.match(template, /category-title/, 'HTML export must visually separate categories');
+assert.match(template, /incomingCategories/, 'HTML player must receive category metadata from Cloud Sync');
+assert.match(template, /config:data.config/, 'HTML player must cache categories together with the channel configuration');
+assert.match(lite, /addGroupedChannelSections\(/, 'Player Lite must render category sections supplied by Extractor');
+assert.match(lite, /toggleFavorite\(/, 'Player Lite must expose local favorite selection');
+assert.match(lite, /favorite_urls/, 'Player Lite favorites must persist locally');
+assert.doesNotMatch(lite, /showCategoryManager|showCategoryPicker/, 'Player Lite must not edit Extractor-defined categories');
+assert.match(readFileSync('cloud-sync/src/index.ts', 'utf8'), /categories, channels: body.channels/, 'Cloud Sync must persist category metadata with channels');
 console.log('Player template checks passed.');
 
 const extractor = readFileSync('android/app/src/main/java/it/davidealpegiani/skyunoextractor/MainActivity.kt', 'utf8');
