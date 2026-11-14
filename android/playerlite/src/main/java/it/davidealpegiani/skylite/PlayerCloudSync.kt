@@ -106,7 +106,9 @@ internal object PlayerCloudSync {
             val channel = channels.optJSONObject(index) ?: return@count false
             val name = channel.optString("name")
             val stream = channel.optString("url")
-            name.isNotBlank() && (stream.startsWith("https://", true) || stream.startsWith("http://", true))
+            val category = channel.optString("category", "Non classificati")
+            name.isNotBlank() && category.length <= 40 &&
+                (stream.startsWith("https://", true) || stream.startsWith("http://", true))
         }
         require(valid == channels.length()) { "La configurazione contiene canali non validi." }
 
