@@ -6,6 +6,7 @@ const kotlin = readFileSync('android/app/src/main/java/it/davidealpegiani/skyuno
 const lite = readFileSync('android/playerlite/src/main/java/it/davidealpegiani/skylite/MainActivity.kt', 'utf8');
 const liteManifest = readFileSync('android/playerlite/src/main/AndroidManifest.xml', 'utf8');
 const web = readFileSync('index.html', 'utf8');
+const cloudSync = readFileSync('cloud-sync/src/index.ts', 'utf8');
 const syntaxTemplate = template
   .replace('__CLOUD_SYNC_URL__', JSON.stringify('https://sky-cloud-sync.example.workers.dev'));
 const inlineScripts = [...syntaxTemplate.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)]
@@ -127,3 +128,12 @@ assert.match(extractor, /Dispositivi autorizzati/, 'device manager must show a d
 assert.match(extractor, /Dispositivi revocati/, 'device manager must show a dedicated revoked devices list');
 assert.match(extractor, /private fun confirmClearSavedPlaylists\(/, 'saved playlist library must have a clear action');
 assert.match(extractor, /Svuota archivio e lista canali/, 'clear action must be visible in the UI');
+
+assert.match(kotlin, /showImportDestinationDialog\\(/, 'Extractor must ask for the destination before import');
+assert.match(kotlin, /bulkSelectedIndices/, 'Bulk selection must be independent from export selection');
+assert.match(kotlin, /moveBulkSelectedChannels\\(/, 'Extractor must support moving selected channels together');
+assert.match(kotlin, /normalizeCategoryPath/, 'Category paths must support nested sections');
+assert.match(lite, /addGroupedChannelSections\\(/, 'Player Lite must render nested categories');
+assert.match(template, /const roots=/, 'HTML Player must render category trees');
+assert.match(cloudSync, /channel\\.category\\.length > 80/, 'Cloud Sync must accept nested category paths');
+assert.match(cloudSync, /category\\.length <= 80/, 'Cloud Sync category metadata must accept nested paths');
