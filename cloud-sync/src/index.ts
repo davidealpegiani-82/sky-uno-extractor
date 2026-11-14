@@ -17,6 +17,7 @@ type PublishedConfig = {
   schemaVersion: number;
   updateId: string;
   publishedAt?: string;
+  categories?: string[];
   channels: Channel[];
 };
 
@@ -236,10 +237,15 @@ async function route(request: Request, env: Env): Promise<Response> {
     }
     if (!body || body.schemaVersion !== 1 || !Array.isArray(body.channels) || body.channels.length > 1000 ||
         typeof body.updateId !== "string" || body.updateId.length < 8 || body.updateId.length > 100 ||
-        !body.channels.every(validChannel)) {
+        !body.channels.every(validChannel) ||
+        (body.categories != null && (!Array.isArray(body.categories) || body.categories.length > 100 ||
+          !body.categories.every((category: unknown) => typeof category === "string" && category.trim().length > 0 && category.length <= 40)))) {
       return response({ error: "invalid_configuration" }, 400);
     }
-    const payload = JSON.stringify({ schemaVersion: 1, updateId: body.updateId, channels: body.channels });
+    const categories = Array.isArray(body.categories)
+      ? [...new Set(body.categories.map((category: string) => category.trim()))]
+      : [];
+    const payload = JSON.stringify({ schemaVersion: 1, updateId: body.updateId, categories, channels: body.channels });
     const checksum = await sha256(payload);
     const current = await env.DB.prepare("SELECT version FROM config WHERE config_id = 1").first<{ version: number }>();
     const version = (current?.version || 0) + 1;
