@@ -40,7 +40,7 @@ import androidx.media3.ui.PlayerView
 import org.json.JSONArray
 import org.json.JSONObject
 
-private data class CloudChannel(val name: String, val url: String, val logo: String = "")
+private data class CloudChannel(val name: String, val url: String, val logo: String = "", val category: String = "Non classificati")
 
 @UnstableApi
 class MainActivity : Activity() {
@@ -122,6 +122,9 @@ class MainActivity : Activity() {
     private val cloudHandler = Handler(Looper.getMainLooper())
     private val cloudExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
     private val cloudChannels = mutableListOf<CloudChannel>()
+    private val cloudCategories = mutableListOf<String>()
+    private val favoriteUrls = mutableSetOf<String>()
+    private val playerPrefs by lazy { getSharedPreferences("davix_player_preferences", MODE_PRIVATE) }
     private var lastAuthorizationCheckAt = 0L
     private var lastChannelClickName: String? = null
     private var lastChannelClickAt = 0L
@@ -475,13 +478,18 @@ class MainActivity : Activity() {
             return
         }
         val config = PlayerCloudSync.cachedConfig(this)
+        cloudCategories.clear()
+        val categoryArray = config?.optJSONArray("categories") ?: JSONArray()
+        for (i in 0 until categoryArray.length()) categoryArray.optString(i).trim().takeIf { it.isNotBlank() }?.let { cloudCategories.add(it) }
+        favoriteUrls.clear()
+        favoriteUrls.addAll(playerPrefs.getStringSet("favorite_urls", emptySet()).orEmpty())
         val array = config?.optJSONArray("channels") ?: JSONArray()
         for (i in 0 until array.length()) {
             val item = array.optJSONObject(i) ?: continue
             val name = item.optString("name").trim()
             val url = item.optString("url").trim()
             if (name.isNotBlank() && (url.startsWith("http://", true) || url.startsWith("https://", true))) {
-                cloudChannels.add(CloudChannel(name, url, item.optString("logo")))
+                cloudChannels.add(CloudChannel(name, url, item.optString("logo"), item.optString("category").ifBlank { "Non classificati" }))
             }
         }
         renderCloudChannels()
@@ -502,20 +510,62 @@ class MainActivity : Activity() {
             channelsList.addView(empty)
             return
         }
-        cloudChannels.forEach { channel ->
-            channelsList.addView(
-                buildChannelRow(channel, isCompact = false) { onCloudChannelClicked(channel) },
-                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-                    bottomMargin = if (isTvDevice()) dp(8) else dp(6)
-                }
-            )
-        }
+        addGroupedChannelSections(channelsList, isCompact = false)
         renderFullscreenChannelList()
         if (isTvDevice()) {
-            val selectedIndex = cloudChannels.indexOfFirst { it.url == selectedChannelForRecovery?.url }
-                .takeIf { it >= 0 } ?: 0
-            channelsList.post { channelsList.getChildAt(selectedIndex)?.requestFocus() }
+            val selectedUrl = selectedChannelForRecovery?.url ?: cloudChannels.firstOrNull()?.url
+            channelsList.post { selectedUrl?.let { channelsList.findViewWithTag<View>(it)?.requestFocus() } }
         }
+    }
+
+    private fun addSectionHeading(target: LinearLayout, title: String, compact: Boolean) {
+        target.addView(TextView(this).apply {
+            text = title.uppercase()
+            setTextColor(Color.rgb(0, 190, 220))
+            textSize = if (isTvDevice()) 13f else 11f
+            setTypeface(null, android.graphics.Typeface.BOLD)
+            letterSpacing = 0.10f
+            setPadding(dp(8), dp(if (compact) 16 else 13), dp(8), dp(7))
+            isFocusable = false
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+    }
+
+    private fun addGroupedChannelSections(target: LinearLayout, isCompact: Boolean) {
+        val favorites = cloudChannels.filter { it.url in favoriteUrls }
+        if (favorites.isNotEmpty()) {
+            addSectionHeading(target, "★ Preferiti", isCompact)
+            favorites.forEach { channel -> addChannelItem(target, channel, isCompact) }
+        }
+        val orderedCategories = (cloudCategories + cloudChannels.map { it.category })
+            .map { it.trim() }.filter { it.isNotBlank() }.distinct()
+        orderedCategories.forEach { category ->
+            val items = cloudChannels.filter { it.category.equals(category, true) }
+            if (items.isNotEmpty()) {
+                addSectionHeading(target, category, isCompact)
+                items.forEach { channel -> addChannelItem(target, channel, isCompact) }
+            }
+        }
+        val known = orderedCategories.toSet()
+        val uncategorized = cloudChannels.filter { it.category.isBlank() || it.category !in known }
+        if (uncategorized.isNotEmpty()) {
+            addSectionHeading(target, "Non classificati", isCompact)
+            uncategorized.forEach { channel -> addChannelItem(target, channel, isCompact) }
+        }
+    }
+
+    private fun addChannelItem(target: LinearLayout, channel: CloudChannel, isCompact: Boolean) {
+        target.addView(
+            buildChannelRow(channel, isCompact) { onCloudChannelClicked(channel) },
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                bottomMargin = if (isTvDevice()) dp(8) else dp(6)
+            }
+        )
+    }
+
+    private fun toggleFavorite(channel: CloudChannel) {
+        if (!favoriteUrls.add(channel.url)) favoriteUrls.remove(channel.url)
+        playerPrefs.edit().putStringSet("favorite_urls", favoriteUrls.toSet()).apply()
+        renderCloudChannels()
     }
 
     /**
@@ -530,6 +580,7 @@ class MainActivity : Activity() {
     ): View {
         val selected = selectedChannelForRecovery?.url == channel.url
         val row = LinearLayout(this).apply {
+            tag = channel.url
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             isFocusable = true
@@ -599,6 +650,20 @@ class MainActivity : Activity() {
             }
         }
         row.addView(live, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        val favorite = TextView(this).apply {
+            text = if (channel.url in favoriteUrls) "★" else "☆"
+            contentDescription = if (channel.url in favoriteUrls) "Rimuovi dai preferiti" else "Aggiungi ai preferiti"
+            gravity = Gravity.CENTER
+            textSize = if (isTvDevice()) 25f else 22f
+            setTextColor(if (channel.url in favoriteUrls) Color.rgb(255, 204, 64) else Color.rgb(160, 181, 202))
+            isFocusable = true
+            isClickable = true
+            setPadding(dp(12), dp(4), dp(8), dp(4))
+            setBackground(channelActionBackground())
+            setOnFocusChangeListener { view, focused -> view.background = channelActionBackground(focused) }
+            setOnClickListener { toggleFavorite(channel) }
+        }
+        row.addView(favorite, LinearLayout.LayoutParams(dp(52), dp(52)))
         row.setOnFocusChangeListener { view, focused ->
             view.background = channelFocusBackground(focused, selected)
             view.animate().scaleX(if (focused) 1.025f else 1f).scaleY(if (focused) 1.025f else 1f)
@@ -629,24 +694,14 @@ class MainActivity : Activity() {
         fullscreenChannelList.removeAllViews()
         if (cloudChannels.isEmpty()) {
             fullscreenChannelList.addView(TextView(this).apply {
-                text = "Nessun canale disponibile nell'elenco locale.\n\nPer visualizzare qui la playlist completa, associa il Player a DAVIX Cloud Sync oppure aggiorna la lista sincronizzata."
+                text = "Nessun canale disponibile nell'elenco locale. Associa il Player a DAVIX Cloud Sync per ricevere la programmazione."
                 setTextColor(Color.rgb(210, 220, 232))
                 textSize = 17f
                 setPadding(dp(16), dp(20), dp(16), dp(20))
             })
             return
         }
-        cloudChannels.forEach { channel ->
-            fullscreenChannelList.addView(
-                buildChannelRow(channel, isCompact = true) {
-                    closeFullscreenChannelDrawer()
-                    playCloudChannel(channel)
-                },
-                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-                    bottomMargin = dp(8)
-                }
-            )
-        }
+        addGroupedChannelSections(fullscreenChannelList, isCompact = true)
     }
 
     private fun toggleFullscreenChannelDrawer() {
@@ -658,7 +713,8 @@ class MainActivity : Activity() {
             fullscreenChannelDrawer.visibility = View.VISIBLE
             fullscreenChannelsButton.visibility = View.GONE
             fullscreenChannelDrawer.post {
-                val firstChannel = fullscreenChannelList.getChildAt(0)
+                val firstUrl = cloudChannels.firstOrNull()?.url
+                val firstChannel = firstUrl?.let { fullscreenChannelList.findViewWithTag<View>(it) }
                 (firstChannel ?: fullscreenChannelDrawer.getChildAt(0))?.requestFocus()
             }
         }
