@@ -79,6 +79,7 @@ function validChannel(channel: any): channel is Channel {
     if (url.protocol !== "http:" && url.protocol !== "https:") return false;
   } catch { return false; }
   if (channel.logo != null && (typeof channel.logo !== "string" || channel.logo.length > 4096)) return false;
+  if (channel.category != null && (typeof channel.category !== "string" || channel.category.trim().length === 0 || channel.category.length > 40)) return false;
   if (channel.headers != null && (typeof channel.headers !== "object" || Array.isArray(channel.headers))) return false;
   return true;
 }
