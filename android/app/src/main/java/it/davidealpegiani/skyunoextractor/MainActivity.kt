@@ -59,12 +59,14 @@ data class TvChannel(
     val name: String,
     val url: String,
     val logo: String = "",
-    var selected: Boolean = true
+    var selected: Boolean = true,
+    var category: String = "Non classificati"
 )
 
 @OptIn(UnstableApi::class)
 class MainActivity : FragmentActivity() {
     private val channels = mutableListOf<TvChannel>()
+    private val categories = mutableListOf("Intrattenimento", "Sport", "Cinema", "Documentari", "Musica", "XXX", "Non classificati")
     private lateinit var mainContainer: LinearLayout
     private lateinit var root: LinearLayout
     private lateinit var selectedList: LinearLayout
@@ -461,6 +463,8 @@ class MainActivity : FragmentActivity() {
         row.addView(space(8), LinearLayout.LayoutParams(dp(8), 1))
         row.addView(buttonView("Deseleziona") { channels.forEach { it.selected = false }; renderChannels() }, LinearLayout.LayoutParams(0, dp(46), 1f))
         root.addView(row)
+        button("▦  Gestisci categorie", false) { showCategoryManager() }
+        label("Crea le tue sezioni e assegna ogni canale alla categoria desiderata.", MUTED, 12f)
 
         selectedHeading = TextView(this).apply {
             text = "✓  SELEZIONATI PER ESPORTAZIONE"
@@ -594,6 +598,7 @@ class MainActivity : FragmentActivity() {
                             .put("name", channel.name)
                             .put("url", channel.url)
                             .put("logo", channel.logo)
+                            .put("category", channel.category)
                     )
                 }
                 runCloudAdminTask(
@@ -829,6 +834,7 @@ class MainActivity : FragmentActivity() {
                         else {
                             ch.selected = !(ch.name.contains("sky", true) && (ch.name.contains("plus", true) || ch.name.contains("+1")))
                             channels.add(ch)
+                            if (ch.category !in categories) categories.add(ch.category)
                             added++
                         }
                     }
@@ -932,6 +938,8 @@ class MainActivity : FragmentActivity() {
             .setPositiveButton("Svuota") { _, _ ->
                 savedPlaylistDirectory().listFiles()?.forEach { it.delete() }
                 channels.clear()
+                categories.clear()
+                categories.addAll(listOf("Intrattenimento", "Sport", "Cinema", "Documentari", "Musica", "XXX", "Non classificati"))
                 if (::player.isInitialized) {
                     player.stop()
                     player.clearMediaItems()
@@ -969,11 +977,11 @@ class MainActivity : FragmentActivity() {
     private fun parseChannels(text: String): List<TvChannel> {
         val found = mutableListOf<TvChannel>()
         val seen = mutableSetOf<String>()
-        fun add(nameRaw: String?, urlRaw: String?, logoRaw: String? = "") {
+        fun add(nameRaw: String?, urlRaw: String?, logoRaw: String? = "", categoryRaw: String? = null) {
             val name = nameRaw?.trim()?.takeIf { it.isNotBlank() } ?: return
             val url = urlRaw?.trim()?.replace("&amp;", "&")?.takeIf { it.startsWith("http://", true) || it.startsWith("https://", true) } ?: return
             val key = name.lowercase(Locale.ROOT) + "|" + url
-            if (seen.add(key)) found.add(TvChannel(name, url, logoRaw?.trim().orEmpty()))
+            if (seen.add(key)) found.add(TvChannel(name, url, logoRaw?.trim().orEmpty(), category = categoryRaw?.trim()?.takeIf { it.isNotBlank() } ?: "Non classificati"))
         }
 
         val lines = text.lines()
@@ -982,8 +990,9 @@ class MainActivity : FragmentActivity() {
             if (line.startsWith("#EXTINF", true)) {
                 val name = line.substringAfterLast(',').trim()
                 val logo = Regex("tvg-logo=[\"']([^\"']+)").find(line)?.groupValues?.getOrNull(1).orEmpty()
+                val group = Regex("group-title=[\"']([^\"']+)").find(line)?.groupValues?.getOrNull(1)
                 val url = lines.drop(i + 1).firstOrNull { it.trim().isNotEmpty() && !it.trim().startsWith("#") }?.trim()
-                add(name, url, logo)
+                add(name, url, logo, group)
             }
         }
 
@@ -1010,7 +1019,8 @@ class MainActivity : FragmentActivity() {
             add(
                 field(obj, listOf("name", "title", "channel_name", "tvg-name")),
                 field(obj, listOf("url", "stream", "src", "link")),
-                field(obj, listOf("logo", "tvg-logo", "image", "icon"))
+                field(obj, listOf("logo", "tvg-logo", "image", "icon")),
+                field(obj, listOf("category", "group", "group-title"))
             )
         }
 
@@ -1029,7 +1039,8 @@ class MainActivity : FragmentActivity() {
                 add(
                     o.optString("name", o.optString("title", o.optString("channel_name"))),
                     o.optString("url", o.optString("stream", o.optString("src", o.optString("link")))),
-                    o.optString("logo", o.optString("tvg-logo"))
+                    o.optString("logo", o.optString("tvg-logo")),
+                    o.optString("category", o.optString("group", o.optString("group-title")))
                 )
             }
         } catch (_: Exception) { }
@@ -1070,6 +1081,7 @@ class MainActivity : FragmentActivity() {
                 setOnClickListener { playChannel(index) }
             }
             row.addView(play, LinearLayout.LayoutParams(0, dp(48), 1f))
+            row.addView(buttonView(channel.category) { showCategoryPicker(channel) }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(42)))
             target.addView(row, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
                 bottomMargin = dp(5)
             })
@@ -1077,6 +1089,49 @@ class MainActivity : FragmentActivity() {
         selected.forEach { addChannelRow(it.index, it.value, selectedList) }
         others.forEach { addChannelRow(it.index, it.value, otherList) }
         updateCount()
+    }
+
+    private fun showCategoryManager() {
+        val options = listOf("＋  Nuova categoria") + categories.filter { it != "Non classificati" }
+        AlertDialog.Builder(this).setTitle("Gestisci categorie").setItems(options.toTypedArray()) { _, index ->
+            if (index == 0) promptNewCategory() else showCategoryActions(options[index])
+        }.setNegativeButton("Chiudi", null).show()
+    }
+
+    private fun promptNewCategory(assignTo: TvChannel? = null) {
+        val input = EditText(this).apply { hint = "Nome categoria"; setSingleLine(true); filters = arrayOf(android.text.InputFilter.LengthFilter(40)) }
+        AlertDialog.Builder(this).setTitle("Nuova categoria").setView(input).setNegativeButton("Annulla", null)
+            .setPositiveButton("Crea") { _, _ ->
+                val name = input.text.toString().trim().replace(Regex("\\s+"), " ")
+                if (name.isBlank() || categories.any { it.equals(name, true) }) { toast("Nome vuoto o categoria già esistente."); return@setPositiveButton }
+                categories.add(name); assignTo?.category = name; renderChannels(); toast("Categoria creata: $name")
+            }.show()
+    }
+
+    private fun showCategoryPicker(channel: TvChannel) {
+        val options = categories.toList() + "＋  Crea nuova categoria…"
+        AlertDialog.Builder(this).setTitle("Categoria · ${channel.name}").setItems(options.toTypedArray()) { _, index ->
+            if (index == options.lastIndex) promptNewCategory(channel) else { channel.category = options[index]; renderChannels() }
+        }.setNegativeButton("Annulla", null).show()
+    }
+
+    private fun showCategoryActions(category: String) {
+        AlertDialog.Builder(this).setTitle(category).setItems(arrayOf("Rinomina", "Elimina")) { _, action ->
+            if (action == 0) {
+                val input = EditText(this).apply { setText(category); setSingleLine(true); filters = arrayOf(android.text.InputFilter.LengthFilter(40)) }
+                AlertDialog.Builder(this).setTitle("Rinomina categoria").setView(input).setNegativeButton("Annulla", null)
+                    .setPositiveButton("Salva") { _, _ ->
+                        val renamed = input.text.toString().trim().replace(Regex("\\s+"), " ")
+                        if (renamed.isBlank() || categories.any { it != category && it.equals(renamed, true) }) toast("Nome vuoto o già utilizzato.")
+                        else { categories[categories.indexOf(category)] = renamed; channels.filter { it.category == category }.forEach { it.category = renamed }; renderChannels() }
+                    }.show()
+            } else {
+                AlertDialog.Builder(this).setTitle("Eliminare $category?").setMessage("I canali verranno spostati in Non classificati.")
+                    .setNegativeButton("Annulla", null).setPositiveButton("Elimina") { _, _ ->
+                        categories.remove(category); channels.filter { it.category == category }.forEach { it.category = "Non classificati" }; renderChannels()
+                    }.show()
+            }
+        }.setNegativeButton("Indietro", null).show()
     }
 
     private fun updateCount() {
