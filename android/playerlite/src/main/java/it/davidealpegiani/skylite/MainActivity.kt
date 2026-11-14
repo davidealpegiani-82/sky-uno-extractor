@@ -959,6 +959,7 @@ class MainActivity : Activity() {
             cloudStatusView.visibility = View.GONE
             channelScroll.visibility = View.GONE
             cloudHeaderView.visibility = View.GONE
+            channelsHeaderView.visibility = View.GONE
             if (isTvDevice()) playerParams.width = ViewGroup.LayoutParams.MATCH_PARENT
             playerParams.height = ViewGroup.LayoutParams.MATCH_PARENT
             playerParams.weight = 0f
@@ -995,6 +996,7 @@ class MainActivity : Activity() {
             cloudStatusView.visibility = View.VISIBLE
             channelScroll.visibility = View.VISIBLE
             cloudHeaderView.visibility = View.GONE
+            channelsHeaderView.visibility = if (PlayerCloudSync.hasValidLease(this)) View.VISIBLE else View.GONE
             if (isTvDevice()) playerParams.width = 0
             playerParams.height = if (isTvDevice()) ViewGroup.LayoutParams.MATCH_PARENT else 0
             playerParams.weight = 1f
