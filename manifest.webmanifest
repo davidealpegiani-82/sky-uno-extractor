@@ -1,7 +1,7 @@
 {
   "id": "./",
   "name": "DAVIX Extractor",
-  "short_name": "DAVIX Extractor",
+  "short_name": "DAVIX",
   "description": "Estrai le varianti dalle tue playlist e crea player HTML e link HTTPS.",
   "lang": "it-IT",
   "start_url": "./",
@@ -10,16 +10,8 @@
   "orientation": "any",
   "background_color": "#080b12",
   "theme_color": "#080b12",
-  "categories": [
-    "utilities",
-    "video"
-  ],
+  "categories": ["utilities", "video"],
   "icons": [
-    {
-      "src": "./icon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
-      "purpose": "any"
-    }
+    {"src": "./icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any"}
   ]
 }

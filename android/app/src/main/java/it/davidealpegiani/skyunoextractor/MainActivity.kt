@@ -48,6 +48,7 @@ import androidx.media3.ui.PlayerView
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedReader
+import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
@@ -58,12 +59,15 @@ data class TvChannel(
     val name: String,
     val url: String,
     val logo: String = "",
-    var selected: Boolean = true
+    var selected: Boolean = true,
+    var category: String = "Non classificati"
 )
 
 @OptIn(UnstableApi::class)
 class MainActivity : FragmentActivity() {
     private val channels = mutableListOf<TvChannel>()
+    private val categories = mutableListOf("Intrattenimento", "Sport", "Cinema", "Documentari", "Musica", "XXX", "Non classificati")
+    private val categoryPrefs by lazy { getSharedPreferences("davix_extractor_categories", MODE_PRIVATE) }
     private lateinit var mainContainer: LinearLayout
     private lateinit var root: LinearLayout
     private lateinit var selectedList: LinearLayout
@@ -122,6 +126,7 @@ class MainActivity : FragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        loadCategorySettings()
         window.statusBarColor = BG
         window.navigationBarColor = BG
         window.decorView.systemUiVisibility = 0
@@ -460,6 +465,8 @@ class MainActivity : FragmentActivity() {
         row.addView(space(8), LinearLayout.LayoutParams(dp(8), 1))
         row.addView(buttonView("Deseleziona") { channels.forEach { it.selected = false }; renderChannels() }, LinearLayout.LayoutParams(0, dp(46), 1f))
         root.addView(row)
+        button("▦  Gestisci categorie", false) { showCategoryManager() }
+        label("Crea le tue sezioni e assegna ogni canale alla categoria desiderata.", MUTED, 12f)
 
         selectedHeading = TextView(this).apply {
             text = "✓  SELEZIONATI PER ESPORTAZIONE"
@@ -547,6 +554,14 @@ class MainActivity : FragmentActivity() {
         setPadding(0, dp(10), 0, dp(2))
     }
 
+    private fun cloudSyncErrorMessage(error: Exception): String = when (error) {
+        is java.net.SocketTimeoutException ->
+            "Timeout: il Worker DAVIX Cloud Sync non ha risposto in tempo. Verifica la connessione e riprova."
+        is IOException ->
+            "Worker DAVIX Cloud Sync non raggiungibile. Controlla rete, DNS e indirizzo HTTPS del servizio."
+        else -> error.message?.takeIf { it.isNotBlank() } ?: "Errore imprevisto di DAVIX Cloud Sync."
+    }
+
     private fun runCloudAdminTask(task: () -> JSONObject, onSuccess: (JSONObject) -> Unit) {
         status.text = "Connessione a DAVIX Cloud Sync…"
         Thread {
@@ -558,7 +573,7 @@ class MainActivity : FragmentActivity() {
             } catch (e: Exception) {
                 runOnUiThread {
                     if (!isFinishing && !isDestroyed) {
-                        status.text = "Cloud Sync: ${e.message ?: "errore di connessione"}"
+                        status.text = "Cloud Sync: ${cloudSyncErrorMessage(e)}"
                         toast(status.text.toString())
                     }
                 }
@@ -585,10 +600,11 @@ class MainActivity : FragmentActivity() {
                             .put("name", channel.name)
                             .put("url", channel.url)
                             .put("logo", channel.logo)
+                            .put("category", channel.category)
                     )
                 }
                 runCloudAdminTask(
-                    task = { CloudSyncAdmin.publish(this, payload) },
+                    task = { CloudSyncAdmin.publish(this, payload, JSONArray(categories)) },
                     onSuccess = { result ->
                         status.text = "Pubblicazione completata · versione ${result.optInt("version")} · ${result.optInt("channelCount")} canali."
                         toast(status.text.toString())
@@ -662,7 +678,7 @@ class MainActivity : FragmentActivity() {
                         .show()
                 }
             } catch (e: Exception) {
-                runOnUiThread { if (!isFinishing && !isDestroyed) toast(e.message ?: "Impossibile caricare i dispositivi.") }
+                runOnUiThread { if (!isFinishing && !isDestroyed) toast(cloudSyncErrorMessage(e)) }
             }
         }.start()
     }
@@ -807,10 +823,11 @@ class MainActivity : FragmentActivity() {
         var invalid = 0
         uris.forEach { uri ->
             try {
-                val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: ByteArray(0)
+                val bytes = readImportBytes(uri)
                 val text = String(bytes, StandardCharsets.UTF_8)
                 val displayName = queryDisplayName(uri)
                 val found = parseChannels(text)
+                restoreChannelCategories(found)
                 if (found.isEmpty()) {
                     invalid++
                 } else {
@@ -820,6 +837,7 @@ class MainActivity : FragmentActivity() {
                         else {
                             ch.selected = !(ch.name.contains("sky", true) && (ch.name.contains("plus", true) || ch.name.contains("+1")))
                             channels.add(ch)
+                            if (ch.category !in categories) categories.add(ch.category)
                             added++
                         }
                     }
@@ -894,6 +912,7 @@ class MainActivity : FragmentActivity() {
                 return
             }
             val found = parseChannels(file.readText(StandardCharsets.UTF_8))
+            restoreChannelCategories(found)
             if (found.isEmpty()) {
                 toast("Nessun canale valido trovato nel file salvato.")
                 return
@@ -923,6 +942,8 @@ class MainActivity : FragmentActivity() {
             .setPositiveButton("Svuota") { _, _ ->
                 savedPlaylistDirectory().listFiles()?.forEach { it.delete() }
                 channels.clear()
+                categories.clear()
+                categories.addAll(listOf("Intrattenimento", "Sport", "Cinema", "Documentari", "Musica", "XXX", "Non classificati"))
                 if (::player.isInitialized) {
                     player.stop()
                     player.clearMediaItems()
@@ -935,14 +956,36 @@ class MainActivity : FragmentActivity() {
             .show()
     }
 
+    // Evita di caricare file arbitrariamente grandi in memoria durante l'importazione.
+    private fun readImportBytes(uri: Uri): ByteArray {
+        val maxBytes = 64L * 1024L * 1024L
+        val input = contentResolver.openInputStream(uri)
+            ?: throw IOException("Impossibile aprire il file selezionato.")
+        input.use { stream ->
+            val output = ByteArrayOutputStream()
+            val buffer = ByteArray(16 * 1024)
+            var total = 0L
+            while (true) {
+                val count = stream.read(buffer)
+                if (count < 0) break
+                total += count
+                if (total > maxBytes) {
+                    throw IOException("Il file supera il limite di importazione di 64 MB.")
+                }
+                output.write(buffer, 0, count)
+            }
+            return output.toByteArray()
+        }
+    }
+
     private fun parseChannels(text: String): List<TvChannel> {
         val found = mutableListOf<TvChannel>()
         val seen = mutableSetOf<String>()
-        fun add(nameRaw: String?, urlRaw: String?, logoRaw: String? = "") {
+        fun add(nameRaw: String?, urlRaw: String?, logoRaw: String? = "", categoryRaw: String? = null) {
             val name = nameRaw?.trim()?.takeIf { it.isNotBlank() } ?: return
             val url = urlRaw?.trim()?.replace("&amp;", "&")?.takeIf { it.startsWith("http://", true) || it.startsWith("https://", true) } ?: return
             val key = name.lowercase(Locale.ROOT) + "|" + url
-            if (seen.add(key)) found.add(TvChannel(name, url, logoRaw?.trim().orEmpty()))
+            if (seen.add(key)) found.add(TvChannel(name, url, logoRaw?.trim().orEmpty(), category = categoryRaw?.trim()?.takeIf { it.isNotBlank() } ?: "Non classificati"))
         }
 
         val lines = text.lines()
@@ -951,8 +994,9 @@ class MainActivity : FragmentActivity() {
             if (line.startsWith("#EXTINF", true)) {
                 val name = line.substringAfterLast(',').trim()
                 val logo = Regex("tvg-logo=[\"']([^\"']+)").find(line)?.groupValues?.getOrNull(1).orEmpty()
+                val group = Regex("group-title=[\"']([^\"']+)").find(line)?.groupValues?.getOrNull(1)
                 val url = lines.drop(i + 1).firstOrNull { it.trim().isNotEmpty() && !it.trim().startsWith("#") }?.trim()
-                add(name, url, logo)
+                add(name, url, logo, group)
             }
         }
 
@@ -963,21 +1007,35 @@ class MainActivity : FragmentActivity() {
             }
             return null
         }
+        // Parser HTML essenziale per link diretti a flussi: mantiene il testo del link come nome.
+        val htmlLinks = Regex("(?is)<a\\b[^>]*href\\s*=\\s*[\"'](https?://[^\"']+)[\"'][^>]*>(.*?)</a>")
+        htmlLinks.findAll(text).forEach { match ->
+            val label = android.text.Html.fromHtml(
+                match.groupValues[2].replace(Regex("<[^>]+>"), " "),
+                android.text.Html.FROM_HTML_MODE_LEGACY
+            ).toString().trim()
+            add(label, match.groupValues[1])
+        }
+
         val objects = Regex("\\{[^{}]{0,4000}\\}").findAll(text)
         objects.forEach { m ->
             val obj = m.value
             add(
                 field(obj, listOf("name", "title", "channel_name", "tvg-name")),
                 field(obj, listOf("url", "stream", "src", "link")),
-                field(obj, listOf("logo", "tvg-logo", "image", "icon"))
+                field(obj, listOf("logo", "tvg-logo", "image", "icon")),
+                field(obj, listOf("category", "group", "group-title"))
             )
         }
 
         try {
             val trimmed = text.trim()
+            val rootObject = if (trimmed.startsWith("{")) JSONObject(trimmed) else null
             val array = when {
                 trimmed.startsWith("[") -> JSONArray(trimmed)
-                trimmed.startsWith("{") -> JSONObject(trimmed).optJSONArray("channels")
+                rootObject != null -> rootObject.optJSONArray("channels")
+                    ?: rootObject.optJSONArray("items")
+                    ?: rootObject.optJSONArray("data")
                 else -> null
             }
             if (array != null) for (i in 0 until array.length()) {
@@ -985,7 +1043,8 @@ class MainActivity : FragmentActivity() {
                 add(
                     o.optString("name", o.optString("title", o.optString("channel_name"))),
                     o.optString("url", o.optString("stream", o.optString("src", o.optString("link")))),
-                    o.optString("logo", o.optString("tvg-logo"))
+                    o.optString("logo", o.optString("tvg-logo")),
+                    o.optString("category", o.optString("group", o.optString("group-title")))
                 )
             }
         } catch (_: Exception) { }
@@ -993,6 +1052,7 @@ class MainActivity : FragmentActivity() {
     }
 
     private fun renderChannels() {
+        saveCategorySettings()
         selectedList.removeAllViews()
         otherList.removeAllViews()
         val selected = channels.withIndex().filter { it.value.selected }
@@ -1026,6 +1086,7 @@ class MainActivity : FragmentActivity() {
                 setOnClickListener { playChannel(index) }
             }
             row.addView(play, LinearLayout.LayoutParams(0, dp(48), 1f))
+            row.addView(buttonView(channel.category) { showCategoryPicker(channel) }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(42)))
             target.addView(row, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
                 bottomMargin = dp(5)
             })
@@ -1033,6 +1094,75 @@ class MainActivity : FragmentActivity() {
         selected.forEach { addChannelRow(it.index, it.value, selectedList) }
         others.forEach { addChannelRow(it.index, it.value, otherList) }
         updateCount()
+    }
+
+    private fun showCategoryManager() {
+        val options = listOf("＋  Nuova categoria") + categories.filter { it != "Non classificati" }
+        AlertDialog.Builder(this).setTitle("Gestisci categorie").setItems(options.toTypedArray()) { _, index ->
+            if (index == 0) promptNewCategory() else showCategoryActions(options[index])
+        }.setNegativeButton("Chiudi", null).show()
+    }
+
+    private fun promptNewCategory(assignTo: TvChannel? = null) {
+        val input = EditText(this).apply { hint = "Nome categoria"; setSingleLine(true); filters = arrayOf(android.text.InputFilter.LengthFilter(40)) }
+        AlertDialog.Builder(this).setTitle("Nuova categoria").setView(input).setNegativeButton("Annulla", null)
+            .setPositiveButton("Crea") { _, _ ->
+                val name = input.text.toString().trim().replace(Regex("\\s+"), " ")
+                if (name.isBlank() || categories.any { it.equals(name, true) }) { toast("Nome vuoto o categoria già esistente."); return@setPositiveButton }
+                categories.add(name); assignTo?.category = name; renderChannels(); toast("Categoria creata: $name")
+            }.show()
+    }
+
+    private fun showCategoryPicker(channel: TvChannel) {
+        val options = categories.toList() + "＋  Crea nuova categoria…"
+        AlertDialog.Builder(this).setTitle("Categoria · ${channel.name}").setItems(options.toTypedArray()) { _, index ->
+            if (index == options.lastIndex) promptNewCategory(channel) else { channel.category = options[index]; renderChannels() }
+        }.setNegativeButton("Annulla", null).show()
+    }
+
+    private fun showCategoryActions(category: String) {
+        AlertDialog.Builder(this).setTitle(category).setItems(arrayOf("Rinomina", "Elimina")) { _, action ->
+            if (action == 0) {
+                val input = EditText(this).apply { setText(category); setSingleLine(true); filters = arrayOf(android.text.InputFilter.LengthFilter(40)) }
+                AlertDialog.Builder(this).setTitle("Rinomina categoria").setView(input).setNegativeButton("Annulla", null)
+                    .setPositiveButton("Salva") { _, _ ->
+                        val renamed = input.text.toString().trim().replace(Regex("\\s+"), " ")
+                        if (renamed.isBlank() || categories.any { it != category && it.equals(renamed, true) }) toast("Nome vuoto o già utilizzato.")
+                        else { categories[categories.indexOf(category)] = renamed; channels.filter { it.category == category }.forEach { it.category = renamed }; renderChannels() }
+                    }.show()
+            } else {
+                AlertDialog.Builder(this).setTitle("Eliminare $category?").setMessage("I canali verranno spostati in Non classificati.")
+                    .setNegativeButton("Annulla", null).setPositiveButton("Elimina") { _, _ ->
+                        categories.remove(category); channels.filter { it.category == category }.forEach { it.category = "Non classificati" }; renderChannels()
+                    }.show()
+            }
+        }.setNegativeButton("Indietro", null).show()
+    }
+
+    private fun loadCategorySettings() {
+        val saved = categoryPrefs.getString("categories_json", null)
+        if (!saved.isNullOrBlank()) runCatching {
+            val array = JSONArray(saved)
+            val loaded = (0 until array.length()).map { array.optString(it).trim() }.filter { it.isNotBlank() && it.length <= 40 }.distinct()
+            if (loaded.isNotEmpty()) { categories.clear(); categories.addAll(loaded) }
+        }
+        if ("Non classificati" !in categories) categories.add("Non classificati")
+    }
+
+    private fun restoreChannelCategories(items: List<TvChannel>) {
+        val mapping = runCatching { JSONObject(categoryPrefs.getString("channel_categories_json", "{}") ?: "{}") }.getOrNull() ?: return
+        items.forEach { channel ->
+            val savedCategory = mapping.optString(channel.url)
+            if (savedCategory.isNotBlank() && categories.any { it.equals(savedCategory, true) }) channel.category = savedCategory
+            if (channel.category !in categories) categories.add(channel.category)
+        }
+    }
+
+    private fun saveCategorySettings() {
+        val mapping = JSONObject()
+        channels.forEach { mapping.put(it.url, it.category) }
+        categoryPrefs.edit().putString("categories_json", JSONArray(categories).toString())
+            .putString("channel_categories_json", mapping.toString()).apply()
     }
 
     private fun updateCount() {
@@ -1088,10 +1218,11 @@ class MainActivity : FragmentActivity() {
                             .put("name", channel.name)
                             .put("url", channel.url)
                             .put("logo", channel.logo)
+                            .put("category", channel.category)
                     )
                 }
                 runCloudAdminTask(
-                    task = { CloudSyncAdmin.publish(this, payload) },
+                    task = { CloudSyncAdmin.publish(this, payload, JSONArray(categories)) },
                     onSuccess = { result ->
                         pendingHtml = makePlayerHtml(chosen)
                         val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {

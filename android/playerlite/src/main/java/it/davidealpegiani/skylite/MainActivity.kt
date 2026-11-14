@@ -40,7 +40,7 @@ import androidx.media3.ui.PlayerView
 import org.json.JSONArray
 import org.json.JSONObject
 
-private data class CloudChannel(val name: String, val url: String, val logo: String = "")
+private data class CloudChannel(val name: String, val url: String, val logo: String = "", val category: String = "Non classificati")
 
 @UnstableApi
 class MainActivity : Activity() {
@@ -85,9 +85,16 @@ class MainActivity : Activity() {
                 Player.STATE_ENDED -> "ENDED"
                 else -> "?"
             }
-            diagnosticsView.text = "HLS: $state · buffer ${aheadMs / 1000}s · " +
-                (if (current.isLoading) "download attivo" else "download in attesa") +
-                " · $lastHlsLoad"
+            if (current.playbackState == Player.STATE_BUFFERING && lastReportedPlaybackState == Player.STATE_READY) {
+                rebufferCount++
+            }
+            lastReportedPlaybackState = current.playbackState
+            val liveOffsetMs = current.currentLiveOffset
+            val liveOffset = if (liveOffsetMs == C.TIME_UNSET) "n/d" else "${liveOffsetMs / 1000}s"
+            val lease = if (PlayerCloudSync.hasValidLease(this@MainActivity)) "valida" else "scaduta/non attiva"
+            diagnosticsView.text = "HLS: $state · buffer ${aheadMs / 1000}s · live $liveOffset\n" +
+                "rebuffer $rebufferCount · retry $retryCount · licenza $lease\n" +
+                "${if (current.isLoading) "download attivo" else "download in attesa"} · $lastHlsLoad · errore $lastPlayerError"
             monitorPlaybackHealth(current, now, aheadMs)
             retryHandler.postDelayed(this, 1000L)
         }
@@ -96,6 +103,11 @@ class MainActivity : Activity() {
     @Volatile private var lastHlsLoad = "segmenti: in attesa"
     private var retryCount = 0
     private var retryTask: Runnable? = null
+    // Invalida in modo atomico i retry appartenenti a un canale o a una sessione precedente.
+    private var playbackGeneration = 0L
+    private var rebufferCount = 0
+    private var lastReportedPlaybackState = Player.STATE_IDLE
+    private var lastPlayerError = "nessuno"
     private lateinit var endpointInput: EditText
     private lateinit var activationCodeInput: EditText
     private lateinit var pairButton: Button
@@ -110,6 +122,9 @@ class MainActivity : Activity() {
     private val cloudHandler = Handler(Looper.getMainLooper())
     private val cloudExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
     private val cloudChannels = mutableListOf<CloudChannel>()
+    private val cloudCategories = mutableListOf<String>()
+    private val favoriteUrls = mutableSetOf<String>()
+    private val playerPrefs by lazy { getSharedPreferences("davix_player_preferences", MODE_PRIVATE) }
     private var lastAuthorizationCheckAt = 0L
     private var lastChannelClickName: String? = null
     private var lastChannelClickAt = 0L
@@ -463,13 +478,18 @@ class MainActivity : Activity() {
             return
         }
         val config = PlayerCloudSync.cachedConfig(this)
+        cloudCategories.clear()
+        val categoryArray = config?.optJSONArray("categories") ?: JSONArray()
+        for (i in 0 until categoryArray.length()) categoryArray.optString(i).trim().takeIf { it.isNotBlank() }?.let { cloudCategories.add(it) }
+        favoriteUrls.clear()
+        favoriteUrls.addAll(playerPrefs.getStringSet("favorite_urls", emptySet()).orEmpty())
         val array = config?.optJSONArray("channels") ?: JSONArray()
         for (i in 0 until array.length()) {
             val item = array.optJSONObject(i) ?: continue
             val name = item.optString("name").trim()
             val url = item.optString("url").trim()
             if (name.isNotBlank() && (url.startsWith("http://", true) || url.startsWith("https://", true))) {
-                cloudChannels.add(CloudChannel(name, url, item.optString("logo")))
+                cloudChannels.add(CloudChannel(name, url, item.optString("logo"), item.optString("category").ifBlank { "Non classificati" }))
             }
         }
         renderCloudChannels()
@@ -490,38 +510,173 @@ class MainActivity : Activity() {
             channelsList.addView(empty)
             return
         }
-        cloudChannels.forEach { channel ->
-            val item = TextView(this).apply {
-                text = "▶   ${channel.name}"
-                isFocusable = true
-                isClickable = true
-                isSingleLine = false
-                maxLines = 2
-                ellipsize = android.text.TextUtils.TruncateAt.END
-                gravity = Gravity.CENTER_VERTICAL
-                textSize = if (isTvDevice()) 19f else 15f
-                includeFontPadding = true
-                setLineSpacing(dp(2).toFloat(), 1.0f)
-                setTextColor(Color.rgb(244, 249, 255))
-                setPadding(dp(22), if (isTvDevice()) dp(25) else dp(12), dp(20), if (isTvDevice()) dp(25) else dp(12))
-                minHeight = if (isTvDevice()) dp(86) else dp(52)
-                isFocusable = true
-                isFocusableInTouchMode = !isTvDevice()
-                background = channelFocusBackground(false)
-                setOnFocusChangeListener { _, focused -> background = channelFocusBackground(focused) }
-                setOnClickListener { onCloudChannelClicked(channel) }
-            }
-            channelsList.addView(item, LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply {
-                height = ViewGroup.LayoutParams.WRAP_CONTENT
-                bottomMargin = if (isTvDevice()) dp(10) else dp(8)
-            })
-        }
+        addGroupedChannelSections(channelsList, isCompact = false)
         renderFullscreenChannelList()
         if (isTvDevice()) {
-            channelsList.post { channelsList.getChildAt(0)?.requestFocus() }
+            val selectedUrl = selectedChannelForRecovery?.url ?: cloudChannels.firstOrNull()?.url
+            channelsList.post { selectedUrl?.let { channelsList.findViewWithTag<View>(it)?.requestFocus() } }
         }
+    }
+
+    private fun addSectionHeading(target: LinearLayout, title: String, compact: Boolean) {
+        target.addView(TextView(this).apply {
+            text = title.uppercase()
+            setTextColor(Color.rgb(0, 190, 220))
+            textSize = if (isTvDevice()) 13f else 11f
+            setTypeface(null, android.graphics.Typeface.BOLD)
+            letterSpacing = 0.10f
+            setPadding(dp(8), dp(if (compact) 16 else 13), dp(8), dp(7))
+            isFocusable = false
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+    }
+
+    private fun addGroupedChannelSections(target: LinearLayout, isCompact: Boolean) {
+        val favorites = cloudChannels.filter { it.url in favoriteUrls }
+        if (favorites.isNotEmpty()) {
+            addSectionHeading(target, "★ Preferiti", isCompact)
+            favorites.forEach { channel -> addChannelItem(target, channel, isCompact) }
+        }
+        val orderedCategories = (cloudCategories + cloudChannels.map { it.category })
+            .map { it.trim() }.filter { it.isNotBlank() }.distinct()
+        orderedCategories.forEach { category ->
+            val items = cloudChannels.filter { it.category.equals(category, true) }
+            if (items.isNotEmpty()) {
+                addSectionHeading(target, category, isCompact)
+                items.forEach { channel -> addChannelItem(target, channel, isCompact) }
+            }
+        }
+        val uncategorized = cloudChannels.filter { channel -> channel.category.isBlank() || orderedCategories.none { it.equals(channel.category, true) } }
+        if (uncategorized.isNotEmpty()) {
+            addSectionHeading(target, "Non classificati", isCompact)
+            uncategorized.forEach { channel -> addChannelItem(target, channel, isCompact) }
+        }
+    }
+
+    private fun addChannelItem(target: LinearLayout, channel: CloudChannel, isCompact: Boolean) {
+        target.addView(
+            buildChannelRow(channel, isCompact) { onCloudChannelClicked(channel) },
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                bottomMargin = if (isTvDevice()) dp(8) else dp(6)
+            }
+        )
+    }
+
+    private fun toggleFavorite(channel: CloudChannel) {
+        if (!favoriteUrls.add(channel.url)) favoriteUrls.remove(channel.url)
+        playerPrefs.edit().putStringSet("favorite_urls", favoriteUrls.toSet()).apply()
+        renderCloudChannels()
+        if (isTvDevice()) {
+            val container = if (isChannelDrawerOpen) fullscreenChannelList else channelsList
+            container.post { container.findViewWithTag<View>("favorite:${channel.url}")?.requestFocus() }
+        }
+    }
+
+    /**
+     * Riga canale condivisa tra schermata principale e drawer TV.
+     * Il placeholder usa l'iniziale del canale: nessuna richiesta di rete aggiuntiva
+     * e nessun logo remoto può rallentare lo scorrimento con il telecomando.
+     */
+    private fun buildChannelRow(
+        channel: CloudChannel,
+        isCompact: Boolean,
+        onClick: () -> Unit
+    ): View {
+        val selected = selectedChannelForRecovery?.url == channel.url
+        val row = LinearLayout(this).apply {
+            tag = channel.url
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            isFocusable = true
+            isFocusableInTouchMode = !isTvDevice()
+            isClickable = true
+            minimumHeight = dp(if (isTvDevice()) 82 else 62)
+            setPadding(dp(if (isCompact) 14 else 16), dp(8), dp(14), dp(8))
+            background = channelFocusBackground(false, selected)
+            clipToPadding = false
+        }
+        val accent = View(this).apply {
+            setBackgroundColor(if (selected) Color.rgb(0, 212, 255) else Color.TRANSPARENT)
+        }
+        row.addView(accent, LinearLayout.LayoutParams(dp(4), ViewGroup.LayoutParams.MATCH_PARENT).apply {
+            rightMargin = dp(12)
+        })
+        val logo = TextView(this).apply {
+            text = channel.name.trim().firstOrNull()?.uppercase() ?: "▶"
+            gravity = Gravity.CENTER
+            textSize = if (isTvDevice()) 18f else 15f
+            setTypeface(null, android.graphics.Typeface.BOLD)
+            setTextColor(if (selected) Color.rgb(0, 212, 255) else Color.rgb(205, 225, 238))
+            background = android.graphics.drawable.GradientDrawable().apply {
+                shape = android.graphics.drawable.GradientDrawable.OVAL
+                setColor(if (selected) Color.rgb(14, 56, 73) else Color.rgb(29, 43, 61))
+                setStroke(dp(1), if (selected) Color.rgb(0, 160, 195) else Color.rgb(57, 82, 108))
+            }
+        }
+        row.addView(logo, LinearLayout.LayoutParams(dp(44), dp(44)).apply { rightMargin = dp(14) })
+
+        val labels = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val name = TextView(this).apply {
+            text = channel.name
+            setTextColor(Color.rgb(241, 245, 249))
+            textSize = if (isTvDevice()) 19f else 15f
+            setTypeface(null, if (selected) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+        }
+        val subtitle = TextView(this).apply {
+            text = if (selected) "IN RIPRODUZIONE" else "CANALE LIVE"
+            setTextColor(if (selected) Color.rgb(0, 190, 220) else Color.rgb(132, 153, 174))
+            textSize = 10f
+            letterSpacing = 0.10f
+            setTypeface(null, android.graphics.Typeface.BOLD)
+            setPadding(0, dp(3), 0, 0)
+        }
+        labels.addView(name)
+        labels.addView(subtitle)
+        row.addView(labels, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+
+        val live = TextView(this).apply {
+            text = if (selected) "ON AIR" else "LIVE"
+            gravity = Gravity.CENTER
+            setTextColor(if (selected) Color.rgb(4, 18, 26) else Color.rgb(135, 205, 221))
+            textSize = 10f
+            setTypeface(null, android.graphics.Typeface.BOLD)
+            letterSpacing = 0.06f
+            setPadding(dp(10), dp(6), dp(10), dp(6))
+            background = android.graphics.drawable.GradientDrawable().apply {
+                cornerRadius = dp(12).toFloat()
+                setColor(if (selected) Color.rgb(0, 212, 255) else Color.rgb(22, 54, 69))
+                setStroke(dp(1), if (selected) Color.rgb(0, 212, 255) else Color.rgb(45, 105, 128))
+            }
+        }
+        row.addView(live, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        val favorite = TextView(this).apply {
+            tag = "favorite:${channel.url}"
+            text = if (channel.url in favoriteUrls) "★" else "☆"
+            contentDescription = if (channel.url in favoriteUrls) "Rimuovi dai preferiti" else "Aggiungi ai preferiti"
+            gravity = Gravity.CENTER
+            textSize = if (isTvDevice()) 25f else 22f
+            setTextColor(if (channel.url in favoriteUrls) Color.rgb(255, 204, 64) else Color.rgb(160, 181, 202))
+            isFocusable = true
+            isClickable = true
+            setPadding(dp(12), dp(4), dp(8), dp(4))
+            setBackground(channelActionBackground())
+            setOnFocusChangeListener { view, focused -> view.background = channelActionBackground(focused) }
+            setOnClickListener { toggleFavorite(channel) }
+        }
+        row.addView(favorite, LinearLayout.LayoutParams(dp(52), dp(52)))
+        row.setOnFocusChangeListener { view, focused ->
+            view.background = channelFocusBackground(focused, selected)
+            view.animate().scaleX(if (focused) 1.025f else 1f).scaleY(if (focused) 1.025f else 1f)
+                .translationZ(if (focused) dp(8).toFloat() else 0f)
+                .setDuration(150L).start()
+            accent.setBackgroundColor(if (focused || selected) Color.rgb(0, 212, 255) else Color.TRANSPARENT)
+        }
+        row.setOnClickListener { onClick() }
+        return row
     }
 
     private fun primaryActionBackground(focused: Boolean): android.graphics.drawable.GradientDrawable =
@@ -543,34 +698,14 @@ class MainActivity : Activity() {
         fullscreenChannelList.removeAllViews()
         if (cloudChannels.isEmpty()) {
             fullscreenChannelList.addView(TextView(this).apply {
-                text = "Nessun canale disponibile nell'elenco locale.\n\nPer visualizzare qui la playlist completa, associa il Player a DAVIX Cloud Sync oppure aggiorna la lista sincronizzata."
+                text = "Nessun canale disponibile nell'elenco locale. Associa il Player a DAVIX Cloud Sync per ricevere la programmazione."
                 setTextColor(Color.rgb(210, 220, 232))
                 textSize = 17f
                 setPadding(dp(16), dp(20), dp(16), dp(20))
             })
             return
         }
-        cloudChannels.forEach { channel ->
-            val row = TextView(this).apply {
-                text = "▶   ${channel.name}"
-                textSize = 19f
-                maxLines = 2
-                gravity = Gravity.CENTER_VERTICAL
-                setTextColor(Color.WHITE)
-                setPadding(dp(18), dp(18), dp(18), dp(18))
-                isFocusable = true
-                isClickable = true
-                background = channelActionBackground()
-                setOnFocusChangeListener { _, focused -> background = channelActionBackground(focused) }
-                setOnClickListener {
-                    closeFullscreenChannelDrawer()
-                    playCloudChannel(channel)
-                }
-            }
-            fullscreenChannelList.addView(row, LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = dp(8) })
-        }
+        addGroupedChannelSections(fullscreenChannelList, isCompact = true)
     }
 
     private fun toggleFullscreenChannelDrawer() {
@@ -582,7 +717,8 @@ class MainActivity : Activity() {
             fullscreenChannelDrawer.visibility = View.VISIBLE
             fullscreenChannelsButton.visibility = View.GONE
             fullscreenChannelDrawer.post {
-                val firstChannel = fullscreenChannelList.getChildAt(0)
+                val firstUrl = cloudChannels.firstOrNull()?.url
+                val firstChannel = firstUrl?.let { fullscreenChannelList.findViewWithTag<View>(it) }
                 (firstChannel ?: fullscreenChannelDrawer.getChildAt(0))?.requestFocus()
             }
         }
@@ -596,12 +732,22 @@ class MainActivity : Activity() {
         if (isFullscreen) showFullscreenOverlay(autoHide = true, requestFocus = true)
     }
 
-    private fun channelFocusBackground(focused: Boolean): android.graphics.drawable.GradientDrawable =
+    private fun channelFocusBackground(
+        focused: Boolean,
+        selected: Boolean = false
+    ): android.graphics.drawable.GradientDrawable =
         android.graphics.drawable.GradientDrawable().apply {
-            setColor(if (focused) Color.rgb(17, 68, 91) else Color.rgb(18, 31, 52))
-            cornerRadius = dp(18).toFloat()
-            if (focused) setStroke(dp(3), Color.rgb(69, 220, 255))
-            else setStroke(dp(1), Color.rgb(42, 69, 99))
+            setColor(when {
+                focused -> Color.rgb(20, 61, 78)
+                selected -> Color.rgb(18, 43, 58)
+                else -> Color.rgb(21, 27, 35)
+            })
+            cornerRadius = dp(14).toFloat()
+            when {
+                focused -> setStroke(dp(3), Color.rgb(0, 212, 255))
+                selected -> setStroke(dp(1), Color.rgb(0, 137, 166))
+                else -> setStroke(dp(1), Color.rgb(43, 58, 75))
+            }
         }
 
     private fun beginCloudPairing() {
@@ -693,9 +839,14 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun stopPlaybackForAuthorization() {
+    private fun cancelPendingRecovery(invalidateGeneration: Boolean = true) {
+        if (invalidateGeneration) playbackGeneration++
         retryTask?.let { retryHandler.removeCallbacks(it) }
         retryTask = null
+    }
+
+    private fun stopPlaybackForAuthorization() {
+        cancelPendingRecovery()
         selectedChannelForRecovery = null
         bufferingStartedAt = 0L
         player?.apply { stop(); clearMediaItems() }
@@ -733,15 +884,18 @@ class MainActivity : Activity() {
             statusView.text = "Indirizzo del flusso non valido."
             return
         }
+        cancelPendingRecovery()
         titleView.text = channel.name
         statusView.text = "Connessione al flusso…"
         selectedChannelForRecovery = channel
         bufferingStartedAt = System.currentTimeMillis()
         lastPlaybackProgressAt = bufferingStartedAt
         lastObservedPositionMs = C.TIME_UNSET
-        retryTask?.let { retryHandler.removeCallbacks(it) }
-        retryTask = null
         retryCount = 0
+        lastPlayerError = "nessuno"
+        rebufferCount = 0
+        lastReportedPlaybackState = Player.STATE_IDLE
+        renderCloudChannels()
         player?.apply {
             stop()
             clearMediaItems()
@@ -877,8 +1031,10 @@ class MainActivity : Activity() {
                 android.view.KeyEvent.KEYCODE_GUIDE -> {
                     if (isFullscreen) {
                         toggleFullscreenChannelDrawer()
-                        return true
+                    } else {
+                        playerView.showController()
                     }
+                    return true
                 }
                 android.view.KeyEvent.KEYCODE_BACK,
                 android.view.KeyEvent.KEYCODE_ESCAPE -> {
@@ -897,6 +1053,13 @@ class MainActivity : Activity() {
                 val overlayWasVisible = fullscreenOverlayVisible
                 showFullscreenOverlay(autoHide = true, requestFocus = !overlayWasVisible)
                 when (event.keyCode) {
+                    android.view.KeyEvent.KEYCODE_DPAD_CENTER,
+                    android.view.KeyEvent.KEYCODE_ENTER -> {
+                        if (currentFocus === playerView) {
+                            player?.let { if (it.isPlaying) it.pause() else it.play() }
+                            return true
+                        }
+                    }
                     android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
                         player?.let { if (it.isPlaying) it.pause() else it.play() }
                         return true
@@ -997,6 +1160,7 @@ class MainActivity : Activity() {
         val channel = selectedChannelForRecovery ?: return
         val current = player ?: return
         if (!current.playWhenReady || isFinishing || isDestroyed) return
+        val scheduledGeneration = playbackGeneration
 
         val delays = longArrayOf(2_000L, 4_000L, 8_000L, 15_000L, 30_000L, 45_000L, 60_000L)
         val delay = delays[retryCount.coerceAtMost(delays.lastIndex)]
@@ -1007,7 +1171,7 @@ class MainActivity : Activity() {
             retryTask = null
             val activePlayer = player ?: return@Runnable
             if (!activePlayer.playWhenReady || !PlayerCloudSync.hasValidLease(this) ||
-                selectedChannelForRecovery?.url != channel.url) return@Runnable
+                scheduledGeneration != playbackGeneration || selectedChannelForRecovery?.url != channel.url) return@Runnable
 
             bufferingStartedAt = System.currentTimeMillis()
             lastPlaybackProgressAt = bufferingStartedAt
@@ -1115,6 +1279,7 @@ class MainActivity : Activity() {
                     }
 
                     override fun onPlayerError(error: PlaybackException) {
+                        lastPlayerError = error.errorCodeName
                         val retryable = error.errorCodeName.contains("IO_") ||
                             error.errorCodeName.contains("TIMEOUT") ||
                             error.errorCodeName.contains("BEHIND_LIVE_WINDOW")
@@ -1203,7 +1368,11 @@ class MainActivity : Activity() {
         statusView.text = "Connessione al flusso…"
         // Usa la stessa MediaSourceFactory HLS configurata in initializePlayer().
         // Il MIME esplicito evita ambiguità con flussi HLS senza estensione .m3u8.
+        cancelPendingRecovery()
         selectedChannelForRecovery = CloudChannel(channelName, streamUrl)
+        lastPlayerError = "nessuno"
+        rebufferCount = 0
+        lastReportedPlaybackState = Player.STATE_IDLE
         bufferingStartedAt = System.currentTimeMillis()
         lastPlaybackProgressAt = bufferingStartedAt
         lastObservedPositionMs = C.TIME_UNSET
@@ -1221,6 +1390,7 @@ class MainActivity : Activity() {
 
     override fun onStop() {
         retryHandler.removeCallbacks(diagnosticsTask)
+        cancelPendingRecovery()
         resumeAfterBackground = player?.playWhenReady == true && (player?.mediaItemCount ?: 0) > 0
         player?.pause()
         super.onStop()
@@ -1240,7 +1410,7 @@ class MainActivity : Activity() {
 
     override fun onDestroy() {
         retryHandler.removeCallbacks(diagnosticsTask)
-        retryTask?.let { retryHandler.removeCallbacks(it) }
+        cancelPendingRecovery()
         retryHandler.removeCallbacksAndMessages(null)
         cloudHandler.removeCallbacksAndMessages(null)
         cloudExecutor.shutdownNow()
