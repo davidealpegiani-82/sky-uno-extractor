@@ -812,7 +812,10 @@ class MainActivity : FragmentActivity() {
     @Deprecated("Legacy result API retained for broad Android compatibility")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (resultCode != RESULT_OK || data == null) return
+        if (resultCode != RESULT_OK || data == null) {
+            if (requestCode == PICK_FILE) pendingImportCategory = null
+            return
+        }
         when (requestCode) {
             PICK_FILE -> {
                 val uris = mutableListOf<Uri>()
@@ -1172,7 +1175,7 @@ class MainActivity : FragmentActivity() {
         }
         val options = categories.filter { it != "Non classificati" } + "＋  Crea nuova sezione / sottocartella…"
         AlertDialog.Builder(this)
-            .setTitle("Sposta \${bulkSelectedIndices.size} canali in")
+            .setTitle("Sposta ${bulkSelectedIndices.size} canali in")
             .setItems(options.toTypedArray()) { _, which ->
                 if (which == options.lastIndex) {
                     val input = EditText(this).apply {
@@ -1200,7 +1203,7 @@ class MainActivity : FragmentActivity() {
         bulkSelectedIndices.clear()
         bulkSelectionMode = false
         renderChannels()
-        toast("\$moved canali spostati in \$path")
+        toast("$moved canali spostati in $path")
     }
 
     private fun normalizeCategoryPath(raw: String): String =
