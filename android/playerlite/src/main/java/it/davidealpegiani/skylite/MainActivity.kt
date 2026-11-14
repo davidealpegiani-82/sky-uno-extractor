@@ -545,7 +545,6 @@ class MainActivity : Activity() {
                 items.forEach { channel -> addChannelItem(target, channel, isCompact) }
             }
         }
-        val known = orderedCategories.toSet()
         val uncategorized = cloudChannels.filter { channel -> channel.category.isBlank() || orderedCategories.none { it.equals(channel.category, true) } }
         if (uncategorized.isNotEmpty()) {
             addSectionHeading(target, "Non classificati", isCompact)
