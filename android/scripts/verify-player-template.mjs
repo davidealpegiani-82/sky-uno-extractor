@@ -92,7 +92,7 @@ assert.match(lite, /KEYCODE_MEDIA_PLAY_PAUSE/, 'Play/Pause remote key must toggl
 assert.match(lite, /KEYCODE_MEDIA_PLAY/, 'Play remote key must start playback');
 assert.match(lite, /KEYCODE_MEDIA_PAUSE/, 'Pause remote key must pause playback');
 assert.match(lite, /Elenco canali\. Usa le frecce per scegliere e OK per riprodurre\./, 'TV channel list must explain D-pad and OK navigation');
-assert.match(lite, /val selectedIndex = cloudChannels\.indexOfFirst \{ it\.url == selectedChannelForRecovery\?\.url \}[\s\S]*?channelsList\.post \{ channelsList\.getChildAt\(selectedIndex\)\?\.requestFocus\(\) \}/, 'TV channel list must focus the selected channel, falling back to the first item');
+assert.match(lite, /val selectedUrl = selectedChannelForRecovery\?\.url \?: cloudChannels\.firstOrNull\(\)\?\.url[\s\S]*?channelsList\.post \{ selectedUrl\?\.let \{ channelsList\.findViewWithTag<View>\(it\)\?\.requestFocus\(\) \} \}/, 'TV channel list must focus the selected channel, falling back to the first item despite category headings');
 assert.match(lite, /focusBeforeFullscreen[\s\S]*target\.post \{ target\.requestFocus\(\) \}/, 'leaving fullscreen must restore the previous TV focus target');
 assert.match(lite, /fullscreenChannelDrawer\.post \{[\s\S]*firstChannel[\s\S]*requestFocus\(\)/, 'opening the fullscreen channel drawer must focus its first item');
 assert.match(liteManifest, /LEANBACK_LAUNCHER/, 'Player Lite must be discoverable by Android TV launchers');
