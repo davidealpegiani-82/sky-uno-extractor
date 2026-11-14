@@ -95,7 +95,13 @@ internal object PlayerCloudSync {
             ?: throw IllegalStateException("La configurazione ricevuta non è valida.")
         val channels = config.optJSONArray("channels")
             ?: throw IllegalStateException("La lista dei canali non è presente.")
+        val categories = config.optJSONArray("categories")
         require(channels.length() <= 1000) { "La lista ricevuta supera il limite previsto." }
+        require(categories == null || categories.length() <= 100) { "La configurazione contiene troppe categorie." }
+        if (categories != null) for (index in 0 until categories.length()) {
+            val category = categories.optString(index)
+            require(category.isNotBlank() && category.length <= 40) { "La configurazione contiene una categoria non valida." }
+        }
         val valid = (0 until channels.length()).count { index ->
             val channel = channels.optJSONObject(index) ?: return@count false
             val name = channel.optString("name")
