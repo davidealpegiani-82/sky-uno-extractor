@@ -602,7 +602,7 @@ class MainActivity : FragmentActivity() {
                     )
                 }
                 runCloudAdminTask(
-                    task = { CloudSyncAdmin.publish(this, payload) },
+                    task = { CloudSyncAdmin.publish(this, payload, JSONArray(categories)) },
                     onSuccess = { result ->
                         status.text = "Pubblicazione completata · versione ${result.optInt("version")} · ${result.optInt("channelCount")} canali."
                         toast(status.text.toString())
@@ -1187,10 +1187,11 @@ class MainActivity : FragmentActivity() {
                             .put("name", channel.name)
                             .put("url", channel.url)
                             .put("logo", channel.logo)
+                            .put("category", channel.category)
                     )
                 }
                 runCloudAdminTask(
-                    task = { CloudSyncAdmin.publish(this, payload) },
+                    task = { CloudSyncAdmin.publish(this, payload, JSONArray(categories)) },
                     onSuccess = { result ->
                         pendingHtml = makePlayerHtml(chosen)
                         val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
