@@ -67,6 +67,7 @@ data class TvChannel(
 class MainActivity : FragmentActivity() {
     private val channels = mutableListOf<TvChannel>()
     private val categories = mutableListOf("Intrattenimento", "Sport", "Cinema", "Documentari", "Musica", "XXX", "Non classificati")
+    private val categoryPrefs by lazy { getSharedPreferences("davix_extractor_categories", MODE_PRIVATE) }
     private lateinit var mainContainer: LinearLayout
     private lateinit var root: LinearLayout
     private lateinit var selectedList: LinearLayout
@@ -125,6 +126,7 @@ class MainActivity : FragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        loadCategorySettings()
         window.statusBarColor = BG
         window.navigationBarColor = BG
         window.decorView.systemUiVisibility = 0
@@ -825,6 +827,7 @@ class MainActivity : FragmentActivity() {
                 val text = String(bytes, StandardCharsets.UTF_8)
                 val displayName = queryDisplayName(uri)
                 val found = parseChannels(text)
+                restoreChannelCategories(found)
                 if (found.isEmpty()) {
                     invalid++
                 } else {
@@ -909,6 +912,7 @@ class MainActivity : FragmentActivity() {
                 return
             }
             val found = parseChannels(file.readText(StandardCharsets.UTF_8))
+            restoreChannelCategories(found)
             if (found.isEmpty()) {
                 toast("Nessun canale valido trovato nel file salvato.")
                 return
@@ -1048,6 +1052,7 @@ class MainActivity : FragmentActivity() {
     }
 
     private fun renderChannels() {
+        saveCategorySettings()
         selectedList.removeAllViews()
         otherList.removeAllViews()
         val selected = channels.withIndex().filter { it.value.selected }
@@ -1132,6 +1137,32 @@ class MainActivity : FragmentActivity() {
                     }.show()
             }
         }.setNegativeButton("Indietro", null).show()
+    }
+
+    private fun loadCategorySettings() {
+        val saved = categoryPrefs.getString("categories_json", null)
+        if (!saved.isNullOrBlank()) runCatching {
+            val array = JSONArray(saved)
+            val loaded = (0 until array.length()).map { array.optString(it).trim() }.filter { it.isNotBlank() && it.length <= 40 }.distinct()
+            if (loaded.isNotEmpty()) { categories.clear(); categories.addAll(loaded) }
+        }
+        if ("Non classificati" !in categories) categories.add("Non classificati")
+    }
+
+    private fun restoreChannelCategories(items: List<TvChannel>) {
+        val mapping = runCatching { JSONObject(categoryPrefs.getString("channel_categories_json", "{}") ?: "{}") }.getOrNull() ?: return
+        items.forEach { channel ->
+            val savedCategory = mapping.optString(channel.url)
+            if (savedCategory.isNotBlank() && categories.any { it.equals(savedCategory, true) }) channel.category = savedCategory
+            if (channel.category !in categories) categories.add(channel.category)
+        }
+    }
+
+    private fun saveCategorySettings() {
+        val mapping = JSONObject()
+        channels.forEach { mapping.put(it.url, it.category) }
+        categoryPrefs.edit().putString("categories_json", JSONArray(categories).toString())
+            .putString("channel_categories_json", mapping.toString()).apply()
     }
 
     private fun updateCount() {
