@@ -144,6 +144,10 @@ class MainActivity : FragmentActivity() {
     private var stablePlaybackTask: Runnable? = null
     // Invalida i tentativi appartenenti al canale precedente.
     private var playbackGeneration = 0
+    // Watchdog del buffer live: distingue il normale caricamento da un player
+    // rimasto senza segmenti e senza avanzamento della finestra HLS.
+    private var emptyBufferSinceMs = 0L
+    private var lastEmptyBufferRecoveryMs = 0L
 
     // Diagnostica visibile: misura il buffer realmente disponibile durante i blocchi.
     private val playbackInfoTask = object : Runnable {
@@ -159,8 +163,38 @@ class MainActivity : FragmentActivity() {
             val aheadMs = (player.bufferedPosition - player.currentPosition).coerceAtLeast(0L)
             val liveOffsetMs = player.currentLiveOffset
             val liveText = if (liveOffsetMs == C.TIME_UNSET) "n/d" else "${liveOffsetMs / 1000}s"
+            val loading = player.isLoading
             playbackInfo.text = "HLS: $state · buffer ${aheadMs / 1000}s · live $liveText · " +
-                if (player.isLoading) "download attivo" else "download fermo"
+                if (loading) "download attivo" else "download fermo"
+
+            // Non intervenire sul normale riempimento: se il buffer è vuoto e
+            // Media3 resta in BUFFERING senza caricare, riaggancia la live window.
+            // Se una richiesta è ancora in corso, rispetta prima il timeout HTTP.
+            val now = android.os.SystemClock.elapsedRealtime()
+            if (player.playWhenReady && player.playbackState == Player.STATE_BUFFERING &&
+                aheadMs <= 1_500L && currentPlayingChannelUrl != null &&
+                (castPlayer == null || player.deviceInfo.playbackType == DeviceInfo.PLAYBACK_TYPE_LOCAL)
+            ) {
+                if (emptyBufferSinceMs == 0L) emptyBufferSinceMs = now
+                val stalledFor = now - emptyBufferSinceMs
+                val threshold = if (loading) 55_000L else 18_000L
+                if (stalledFor >= threshold && now - lastEmptyBufferRecoveryMs >= 45_000L) {
+                    lastEmptyBufferRecoveryMs = now
+                    emptyBufferSinceMs = now
+                    Log.w(
+                        "DAVIX-HLS",
+                        "buffer live esaurito senza refill; loading=$loading stalledMs=$stalledFor liveOffsetMs=${player.currentLiveOffset}"
+                    )
+                    // Il seek al default position forza Media3 a usare la finestra
+                    // live corrente, poi prepare riavvia il caricamento dei segmenti.
+                    if (player.currentLiveOffset != C.TIME_UNSET) player.seekToDefaultPosition()
+                    player.prepare()
+                    player.playWhenReady = true
+                    if (::status.isInitialized) status.text = "Buffer esaurito: recupero automatico del flusso…"
+                }
+            } else {
+                emptyBufferSinceMs = 0L
+            }
             retryHandler.postDelayed(this, 1000L)
         }
     }
@@ -406,6 +440,8 @@ class MainActivity : FragmentActivity() {
             playbackRetryTask?.let { retryHandler.removeCallbacks(it) }
             playbackRetryTask = null
             playbackRetryCount = 0
+            emptyBufferSinceMs = 0L
+            lastEmptyBufferRecoveryMs = 0L
             val mediaItemBuilder = MediaItem.Builder()
                 .setUri(streamUrl)
                 .setMediaMetadata(MediaMetadata.Builder().setTitle(channelName).build())
