@@ -3038,6 +3038,7 @@ class MainActivity : FragmentActivity() {
             lastEmptyBufferRecoveryMs = 0L
             lowBufferSinceMs = 0L
             lastMediaLoadActivityMs = 0L
+            lastMediaLoadStartedMs = 0L
             // Imposta il MIME solo quando il formato è riconoscibile dall'URL.
             // Per gli altri flussi lascia decidere a Media3 (TS, MP4, ecc.).
             val mediaItemBuilder = MediaItem.Builder()
