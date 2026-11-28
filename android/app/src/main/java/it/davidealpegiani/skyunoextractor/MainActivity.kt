@@ -148,6 +148,9 @@ class MainActivity : FragmentActivity() {
     // rimasto senza segmenti e senza avanzamento della finestra HLS.
     private var emptyBufferSinceMs = 0L
     private var lastEmptyBufferRecoveryMs = 0L
+    // Guardia preventiva: rileva un buffer in calo prima che arrivi a zero.
+    private var lowBufferSinceMs = 0L
+    private var lastMediaLoadActivityMs = 0L
 
     // Diagnostica visibile: misura il buffer realmente disponibile durante i blocchi.
     private val playbackInfoTask = object : Runnable {
@@ -167,10 +170,44 @@ class MainActivity : FragmentActivity() {
             playbackInfo.text = "HLS: $state · buffer ${aheadMs / 1000}s · live $liveText · " +
                 if (loading) "download attivo" else "download fermo"
 
-            // Non intervenire sul normale riempimento: se il buffer è vuoto e
-            // Media3 resta in BUFFERING senza caricare, riaggancia la live window.
-            // Se una richiesta è ancora in corso, rispetta prima il timeout HTTP.
+            // Guardia preventiva: se il buffer scende sotto 45 secondi e Media3
+            // non avvia/completa segmenti, forza un riallineamento prima dello zero.
+            // Se una richiesta è attiva, non interromperla: rispetta il timeout HTTP.
             val now = android.os.SystemClock.elapsedRealtime()
+            val localPlayback = castPlayer == null ||
+                player.deviceInfo.playbackType == DeviceInfo.PLAYBACK_TYPE_LOCAL
+            val activePlaybackState = player.playbackState == Player.STATE_READY ||
+                player.playbackState == Player.STATE_BUFFERING
+            if (player.playWhenReady && currentPlayingChannelUrl != null &&
+                player.mediaItemCount > 0 && localPlayback && activePlaybackState &&
+                aheadMs in 1L..45_000L && !loading
+            ) {
+                if (lowBufferSinceMs == 0L) lowBufferSinceMs = now
+                val lowFor = now - lowBufferSinceMs
+                val noMediaActivityFor = if (lastMediaLoadActivityMs == 0L) lowFor
+                    else now - lastMediaLoadActivityMs
+                if (lowFor >= 5_000L && noMediaActivityFor >= 10_000L &&
+                    now - lastEmptyBufferRecoveryMs >= 45_000L
+                ) {
+                    lastEmptyBufferRecoveryMs = now
+                    lowBufferSinceMs = 0L
+                    Log.w(
+                        "DAVIX-HLS",
+                        "recupero preventivo buffer live; bufferMs=$aheadMs " +
+                            "noMediaActivityMs=$noMediaActivityFor liveOffsetMs=\${player.currentLiveOffset}"
+                    )
+                    if (player.currentLiveOffset != C.TIME_UNSET) player.seekToDefaultPosition()
+                    player.prepare()
+                    player.playWhenReady = true
+                    if (::status.isInitialized) status.text = "Rete live in stallo: ripristino preventivo…"
+                }
+            } else {
+                lowBufferSinceMs = 0L
+            }
+
+            // Fallback: se il buffer è già vuoto e Media3 resta in BUFFERING
+            // senza caricare, riaggancia la live window. Se una richiesta è attiva,
+            // rispetta prima il timeout HTTP.
             if (player.playWhenReady && player.playbackState == Player.STATE_BUFFERING &&
                 aheadMs <= 1_500L && currentPlayingChannelUrl != null &&
                 (castPlayer == null || player.deviceInfo.playbackType == DeviceInfo.PLAYBACK_TYPE_LOCAL)
@@ -274,6 +311,9 @@ class MainActivity : FragmentActivity() {
                     C.DATA_TYPE_MEDIA -> "segment"
                     else -> "type-" + mediaLoadData.dataType
                 }
+                if (mediaLoadData.dataType == C.DATA_TYPE_MEDIA) {
+                    lastMediaLoadActivityMs = android.os.SystemClock.elapsedRealtime()
+                }
                 Log.d(
                     "DAVIX-HLS",
                     "load start=" + kind + " host=" + (loadEventInfo.dataSpec.uri.host ?: "?")
@@ -290,6 +330,9 @@ class MainActivity : FragmentActivity() {
                     C.DATA_TYPE_MEDIA -> "segment"
                     else -> "type-" + mediaLoadData.dataType
                 }
+                if (mediaLoadData.dataType == C.DATA_TYPE_MEDIA) {
+                    lastMediaLoadActivityMs = android.os.SystemClock.elapsedRealtime()
+                }
                 Log.d(
                     "DAVIX-HLS",
                     "load=" + kind + " host=" + (loadEventInfo.dataSpec.uri.host ?: "?") +
@@ -305,6 +348,9 @@ class MainActivity : FragmentActivity() {
                 error: IOException,
                 wasCanceled: Boolean
             ) {
+                if (mediaLoadData.dataType == C.DATA_TYPE_MEDIA) {
+                    lastMediaLoadActivityMs = android.os.SystemClock.elapsedRealtime()
+                }
                 Log.w(
                     "DAVIX-HLS",
                     "load error host=" + (loadEventInfo.dataSpec.uri.host ?: "?") +
@@ -347,7 +393,11 @@ class MainActivity : FragmentActivity() {
                     .mapNotNull { (it as? HttpDataSource.InvalidResponseCodeException)?.responseCode }
                     .firstOrNull()
                 val retryable = if (httpStatus != null) {
-                    httpStatus == 408 || httpStatus == 425 || httpStatus == 429 || httpStatus in 500..599
+                    // Un 404 su un segmento live può essere transitorio mentre il
+                    // provider aggiorna la playlist: ritenta, ma con un limite.
+                    (httpStatus == 404 && playbackRetryCount < 6) ||
+                        httpStatus == 408 || httpStatus == 425 || httpStatus == 429 ||
+                        httpStatus in 500..599
                 } else {
                     error.errorCodeName.contains("IO_") ||
                         error.errorCodeName.contains("BEHIND_LIVE_WINDOW")
@@ -442,6 +492,8 @@ class MainActivity : FragmentActivity() {
             playbackRetryCount = 0
             emptyBufferSinceMs = 0L
             lastEmptyBufferRecoveryMs = 0L
+            lowBufferSinceMs = 0L
+            lastMediaLoadActivityMs = 0L
             val mediaItemBuilder = MediaItem.Builder()
                 .setUri(streamUrl)
                 .setMediaMetadata(MediaMetadata.Builder().setTitle(channelName).build())
@@ -2971,6 +3023,10 @@ class MainActivity : FragmentActivity() {
             playbackRetryTask?.let { retryHandler.removeCallbacks(it) }
             playbackRetryTask = null
             playbackRetryCount = 0
+            emptyBufferSinceMs = 0L
+            lastEmptyBufferRecoveryMs = 0L
+            lowBufferSinceMs = 0L
+            lastMediaLoadActivityMs = 0L
             // Imposta il MIME solo quando il formato è riconoscibile dall'URL.
             // Per gli altri flussi lascia decidere a Media3 (TS, MP4, ecc.).
             val mediaItemBuilder = MediaItem.Builder()
