@@ -194,7 +194,7 @@ class MainActivity : FragmentActivity() {
                     Log.w(
                         "DAVIX-HLS",
                         "recupero preventivo buffer live; bufferMs=$aheadMs " +
-                            "noMediaActivityMs=$noMediaActivityFor liveOffsetMs=\${player.currentLiveOffset}"
+                            "noMediaActivityMs=$noMediaActivityFor liveOffsetMs=${player.currentLiveOffset}"
                     )
                     if (player.currentLiveOffset != C.TIME_UNSET) player.seekToDefaultPosition()
                     player.prepare()
