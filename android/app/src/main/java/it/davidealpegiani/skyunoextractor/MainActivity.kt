@@ -186,13 +186,11 @@ class MainActivity : FragmentActivity() {
         // Profilo più leggero per dispositivi TV/Android con memoria limitata.
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                60_000, // ripristina la soglia precedente, già verificata nell'avvio dei canali
-                240_000, // margine massimo precedente
-                6_000, // avvio rapido
-                30_000 // ripresa dopo rebuffer
+                60_000, // buffer minimo: non lasciare scaricare a zero
+                240_000, // max: riserva ampia
+                6_000, // avvio
+                30_000 // dopo rebuffer
             )
-            // Margine di memoria maggiore per evitare che il target RAM interrompa il caricamento
-            // prima della soglia temporale richiesta sui flussi HD.
             .setTargetBufferBytes(128 * 1024 * 1024)
             .setPrioritizeTimeOverSizeThresholds(true)
             .build()
@@ -2013,11 +2011,12 @@ class MainActivity : FragmentActivity() {
         updateImportProgress("Caricamento playlist salvata · lettura file…", null)
         Thread({
             try {
-                // Conserva il file sorgente finché l'importazione non è stata
-                // completata davvero: una playlist vuota o non riconosciuta deve
-                // restare disponibile per diagnosi e nuovo tentativo.
-                val found = parseChannels(file.readText(StandardCharsets.UTF_8)) { parsed ->
-                    updateImportProgress("Analisi playlist salvata · $parsed%", parsed)
+                val found = try {
+                    parseChannels(file.readText(StandardCharsets.UTF_8)) { parsed ->
+                        updateImportProgress("Analisi playlist salvata · $parsed%", parsed)
+                    }
+                } finally {
+                    if (deleteAfterImport) file.delete()
                 }
                 if (found.isEmpty()) {
                     runOnUiThread {
@@ -2097,10 +2096,6 @@ class MainActivity : FragmentActivity() {
                                             renderChannels()
                                             persistChannelLibrary()
                                             saveCategorySettings()
-                                            if (deleteAfterImport) {
-                                                runCatching { file.delete() }
-                                                    .onFailure { Log.w("DAVIX-IMPORT", "File temporaneo non eliminato", it) }
-                                            }
                                             importInProgress = false
                                             finishImportProgress()
                                         }
