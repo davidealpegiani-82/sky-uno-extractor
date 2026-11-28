@@ -4,27 +4,27 @@
   "sourceUrl": "http://vegetatvoficial.duckdns.org/data/server_status.json",
   "countryHint": "IT",
   "note": "region=IT indica la classificazione del server da parte di Vegeta, non garantisce che tutti i canali siano italiani. La classificazione a livello di singolo canale verra fatta in seguito.",
-  "updatedAt": "2026-11-28T16:44:14.637Z",
-  "sourceGeneratedAt": "2026-11-28T16:15:39Z",
+  "updatedAt": "2026-11-28T07:32:46.056Z",
+  "sourceGeneratedAt": "2026-11-28T07:09:55Z",
   "serverCount": 4,
   "upCount": 4,
   "downCount": 0,
   "servers": [
     {
-      "id": "vegeta-it-15-app40direct.isapalobis.com",
+      "id": "vegeta-it-15-ios.dragonsdog.com",
       "name": "Server 15",
       "status": "up",
       "region": "IT",
       "detectedRegion": "IT",
       "kind": "xtream",
-      "url": "http://app40direct.isapalobis.com:80/get.php?username=Dottdelucanew&password=DDfwWR7Rh5&type=m3u_plus&output=m3u8",
+      "url": "http://ios.dragonsdog.com:80/get.php?username=peppedent&password=Rl8HYEmMFn24&type=m3u_plus&output=m3u8",
       "apiUp": true,
       "mediaState": "up",
-      "lastChecked": "2026-11-28T16:14:42Z",
-      "responseTimeMs": 165,
+      "lastChecked": "2026-11-28T07:08:44Z",
+      "responseTimeMs": 368,
       "workingExample": {
-        "category": "Campionato Serie A",
-        "stream": "Juventus FHD"
+        "category": "TV SAT",
+        "stream": "Tv 8 FHD"
       },
       "source": "vegeta",
       "sourceUrl": "http://vegetatvoficial.duckdns.org/data/server_status.json"
@@ -39,11 +39,11 @@
       "url": "http://ottrunph.cloudfys.uk:2086/get.php?username=follica&password=1ERE8&type=m3u_plus&output=m3u8",
       "apiUp": true,
       "mediaState": "up",
-      "lastChecked": "2026-11-28T16:14:43Z",
-      "responseTimeMs": 1312,
+      "lastChecked": "2026-11-28T07:08:46Z",
+      "responseTimeMs": 1321,
       "workingExample": {
         "category": "✦ TV SAT",
-        "stream": "27 Twentyseven HD"
+        "stream": "Rai Premium FHD"
       },
       "source": "vegeta",
       "sourceUrl": "http://vegetatvoficial.duckdns.org/data/server_status.json"
@@ -58,11 +58,11 @@
       "url": "http://primark.mywire.org:26650/get.php?username=guarinanto&password=GETT1&type=m3u_plus&output=m3u8",
       "apiUp": true,
       "mediaState": "up",
-      "lastChecked": "2026-11-28T16:14:43Z",
-      "responseTimeMs": 1644,
+      "lastChecked": "2026-11-28T07:08:46Z",
+      "responseTimeMs": 1507,
       "workingExample": {
         "category": "✦ TV SAT",
-        "stream": "La7 Cinema SD"
+        "stream": "Rai Storia SD"
       },
       "source": "vegeta",
       "sourceUrl": "http://vegetatvoficial.duckdns.org/data/server_status.json"
@@ -77,35 +77,17 @@
       "url": "http://asenkis.kismo1.org/get.php?username=001EB8C31547&password=aq5f4jFm&type=m3u",
       "apiUp": true,
       "mediaState": "up",
-      "lastChecked": "2026-11-28T16:14:41Z",
-      "responseTimeMs": 257,
+      "lastChecked": "2026-11-28T07:08:46Z",
+      "responseTimeMs": 1404,
       "workingExample": {
         "category": "TOP ITALIA GRB-TORO",
-        "stream": ": Canale 5 HD"
+        "stream": ": Cine34 HD"
       },
       "source": "vegeta",
       "sourceUrl": "http://vegetatvoficial.duckdns.org/data/server_status.json"
     }
   ],
   "history": [
-    {
-      "at": "2026-11-28T16:44:14.637Z",
-      "sourceGeneratedAt": "2026-11-28T16:15:39Z",
-      "changes": [
-        {
-          "type": "added",
-          "id": "vegeta-it-15-app40direct.isapalobis.com",
-          "name": "Server 15",
-          "status": "up"
-        },
-        {
-          "type": "removed",
-          "id": "vegeta-it-15-ios.dragonsdog.com",
-          "name": "Server 15",
-          "status": "up"
-        }
-      ]
-    },
     {
       "at": "2026-11-26T05:12:05.330Z",
       "sourceGeneratedAt": "2026-11-26T05:07:16Z",
