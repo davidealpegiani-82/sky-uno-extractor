@@ -18,11 +18,8 @@ internal data class VegetaImportResult(
 
 /**
  * Importa i canali Vegeta IT.
- *
- * Il catalogo canali aggregato viene usato come base rapida, ma NON sostituisce
- * la scansione del catalogo server: ogni server pubblicato nel catalogo IT viene
- * provato, anche quando Vegeta lo marca temporaneamente "down". Lo stato è
- * informativo e non deve diventare un filtro che nasconde server al client.
+ * Priorità: catalogo aggregato su GitHub (affidabile, già filtrato).
+ * Fallback: M3U live dai server del catalogo server.
  */
 internal object VegetaItImporter {
     private const val CHANNELS_CATALOG_URL =
@@ -34,12 +31,7 @@ internal object VegetaItImporter {
         context: Context,
         progress: (String) -> Unit = {}
     ): VegetaImportResult {
-        val allChannels = ArrayList<VegetaChannel>()
-        val errors = ArrayList<String>()
-        var catalogUpdatedAt: String? = null
-
-        // 1) Catalogo aggregato: accelera l'importazione e conserva i canali
-        // già raccolti dal job automatico, ma non evita la scansione live.
+        // 1) Catalogo canali pre-aggregato (stesso usato dal Web)
         try {
             progress("Scarico catalogo canali Vegeta IT…")
             val body = request(CHANNELS_CATALOG_URL, MAX_CATALOG_BYTES, "application/json")
@@ -49,13 +41,14 @@ internal object VegetaItImporter {
             }
             val array = root.optJSONArray("channels")
                 ?: throw IOException("Campo channels assente.")
+            val channels = ArrayList<VegetaChannel>(array.length())
             for (i in 0 until array.length()) {
                 val item = array.optJSONObject(i) ?: continue
                 val name = item.optString("name").trim()
                 val url = item.optString("url").trim()
                 if (name.isBlank()) continue
                 if (!url.startsWith("http://", true) && !url.startsWith("https://", true)) continue
-                allChannels.add(
+                channels.add(
                     VegetaChannel(
                         name = name,
                         url = url,
@@ -66,83 +59,82 @@ internal object VegetaItImporter {
                     )
                 )
             }
-            catalogUpdatedAt = root.optString("updatedAt").takeIf { it.isNotBlank() }
-            progress("Catalogo aggregato: ${allChannels.size} canali iniziali.")
-        } catch (error: Exception) {
-            val message = "catalogo canali: ${error.message ?: "errore sconosciuto"}"
-            errors.add(message)
-            progress(message)
+            if (channels.isEmpty()) {
+                throw IOException("Catalogo canali vuoto.")
+            }
+            val unique = dedupe(channels)
+            VegetaItPlaylistStore.save(context, unique, root.optString("updatedAt").takeIf { it.isNotBlank() })
+            progress("Catalogo Vegeta: ${unique.size} canali.")
+            return VegetaImportResult(
+                serversTried = root.optInt("serversTried"),
+                serversOk = root.optInt("serversOk"),
+                channelsImported = unique.size,
+                errors = emptyList(),
+                source = "catalog"
+            )
+        } catch (catalogError: Exception) {
+            progress("Catalogo non disponibile, provo i server live…")
+            // 2) Fallback: M3U live
+            return importFromLiveServers(context, progress, catalogError.message)
+        }
+    }
+
+    private fun importFromLiveServers(
+        context: Context,
+        progress: (String) -> Unit,
+        catalogError: String?
+    ): VegetaImportResult {
+        val catalog = VegetaItCatalogClient.download(progress)
+        val upServers = catalog.servers.filter { it.status == "up" }
+        if (upServers.isEmpty()) {
+            throw IOException(
+                "Nessun server Vegeta IT online." +
+                    (catalogError?.let { " (catalogo: $it)" } ?: "")
+            )
         }
 
-        // 2) Legge l'intero elenco server. Non filtrare per status=up:
-        // il dato può essere transitorio o non aggiornato quando parte DAVIX.
-        val serverCatalog = try {
-            VegetaItCatalogClient.download(progress)
-        } catch (error: Exception) {
-            val message = "catalogo server: ${error.message ?: "errore sconosciuto"}"
-            errors.add(message)
-            if (allChannels.isEmpty()) {
-                throw IOException(
-                    "Impossibile leggere i cataloghi Vegeta." +
-                        " Dettagli: ${errors.joinToString(" · ")}",
-                    error
-                )
-            }
-            progress("Scansione live non disponibile; uso i canali aggregati.")
-            null
+        val allChannels = ArrayList<VegetaChannel>()
+        val errors = ArrayList<String>()
+        if (!catalogError.isNullOrBlank()) {
+            errors.add("catalogo: $catalogError")
         }
+        var ok = 0
 
-        var serversOk = 0
-        val serversTried = serverCatalog?.servers?.size ?: 0
-        if (serverCatalog != null) {
-            if (serverCatalog.servers.isEmpty()) {
-                errors.add("Il catalogo server non contiene server IT.")
-            }
-            serverCatalog.servers.forEachIndexed { index, server ->
-                val state = if (server.status == "up") "online" else "segnalato offline"
-                progress("Server ${index + 1}/${serversTried}: ${server.name} (${state})…")
-                try {
-                    // Ogni server del catalogo viene tentato, indipendentemente
-                    // dallo stato pubblicato da Vegeta.
-                    val m3u = downloadM3u(server.url)
-                    val parsed = parseM3u(m3u, server)
-                    if (parsed.isEmpty()) {
-                        val message = "${server.name}: playlist vuota"
-                        errors.add(message)
-                        progress(message)
-                    } else {
-                        allChannels.addAll(parsed)
-                        serversOk++
-                        progress("${server.name}: ${parsed.size} canali")
-                    }
-                } catch (error: Exception) {
-                    val message = "${server.name}: ${error.message ?: "errore sconosciuto"}"
-                    errors.add(message)
-                    progress(message)
+        upServers.forEachIndexed { index, server ->
+            progress("Server ${index + 1}/${upServers.size}: ${server.name}…")
+            try {
+                val m3u = downloadM3u(server.url)
+                val parsed = parseM3u(m3u, server)
+                if (parsed.isEmpty()) {
+                    errors.add(server.name + ": playlist vuota")
+                    progress(server.name + ": playlist vuota")
+                } else {
+                    allChannels.addAll(parsed)
+                    ok++
+                    progress("${server.name}: ${parsed.size} canali")
                 }
+            } catch (error: Exception) {
+                val msg = server.name + ": " + (error.message ?: "errore sconosciuto")
+                errors.add(msg)
+                progress(msg)
             }
-            catalogUpdatedAt = serverCatalog.updatedAt ?: catalogUpdatedAt
         }
 
         val unique = dedupe(allChannels)
         if (unique.isEmpty()) {
             throw IOException(
-                "Nessun canale recuperato dai cataloghi o dai server Vegeta." +
-                    if (errors.isNotEmpty()) " Dettagli: " + errors.take(5).joinToString(" · ") else ""
+                "Nessun canale recuperato dai server live." +
+                    if (errors.isNotEmpty()) " Dettagli: " + errors.take(3).joinToString(" · ") else ""
             )
         }
-
-        VegetaItPlaylistStore.save(context, unique, catalogUpdatedAt)
-        progress(
-            "Importazione completata: ${unique.size} canali unici; " +
-                "${serversOk}/${serversTried} server con playlist valida."
-        )
+        VegetaItPlaylistStore.save(context, unique, catalog.updatedAt)
+        progress("Importazione live: ${unique.size} canali unici.")
         return VegetaImportResult(
-            serversTried = serversTried,
-            serversOk = serversOk,
+            serversTried = upServers.size,
+            serversOk = ok,
             channelsImported = unique.size,
             errors = errors,
-            source = if (serverCatalog == null) "catalog" else "catalog+live"
+            source = "live"
         )
     }
 
@@ -175,12 +167,11 @@ internal object VegetaItImporter {
                 throw IOException("HTTP $code")
             }
             val output = ByteArrayOutputStream()
-            val input = connection.inputStream
-            input.use {
+            connection.inputStream.use { input ->
                 val buffer = ByteArray(16 * 1024)
                 var total = 0
                 while (true) {
-                    val read = it.read(buffer)
+                    val read = input.read(buffer)
                     if (read < 0) break
                     total += read
                     if (total > maxBytes) throw IOException("Risposta troppo grande")
@@ -235,7 +226,7 @@ internal object VegetaItImporter {
     }
 
     private fun extractAttr(line: String, key: String): String {
-        val regex = Regex("$key=\"([^\"]*)\"", RegexOption.IGNORE_CASE)
+        val regex = Regex("""$key=\"([^\"]*)\"""", RegexOption.IGNORE_CASE)
         return regex.find(line)?.groupValues?.getOrNull(1)?.trim().orEmpty()
     }
 }
