@@ -150,7 +150,9 @@ class MainActivity : FragmentActivity() {
     private var lastEmptyBufferRecoveryMs = 0L
     // Guardia preventiva: rileva un buffer in calo prima che arrivi a zero.
     private var lowBufferSinceMs = 0L
+    // Ultimo segmento completato con successo: start/error non sono progresso.
     private var lastMediaLoadActivityMs = 0L
+    private var lastMediaLoadStartedMs = 0L
 
     // Diagnostica visibile: misura il buffer realmente disponibile durante i blocchi.
     private val playbackInfoTask = object : Runnable {
@@ -170,9 +172,9 @@ class MainActivity : FragmentActivity() {
             playbackInfo.text = "HLS: $state · buffer ${aheadMs / 1000}s · live $liveText · " +
                 if (loading) "download attivo" else "download fermo"
 
-            // Guardia preventiva: se il buffer scende sotto 45 secondi e Media3
-            // non avvia/completa segmenti, forza un riallineamento prima dello zero.
-            // Se una richiesta è attiva, non interromperla: rispetta il timeout HTTP.
+            // Guardia preventiva: non confondere "download attivo" con progresso.
+            // Una richiesta può restare appesa: se il buffer è basso e non arrivano
+            // segmenti completati, interrompiamo il caricamento bloccato prima dello zero.
             val now = android.os.SystemClock.elapsedRealtime()
             val localPlayback = castPlayer == null ||
                 player.deviceInfo.playbackType == DeviceInfo.PLAYBACK_TYPE_LOCAL
@@ -180,13 +182,18 @@ class MainActivity : FragmentActivity() {
                 player.playbackState == Player.STATE_BUFFERING
             if (player.playWhenReady && currentPlayingChannelUrl != null &&
                 player.mediaItemCount > 0 && localPlayback && activePlaybackState &&
-                aheadMs in 1L..45_000L && !loading
+                aheadMs in 1L..45_000L
             ) {
                 if (lowBufferSinceMs == 0L) lowBufferSinceMs = now
                 val lowFor = now - lowBufferSinceMs
-                val noMediaActivityFor = if (lastMediaLoadActivityMs == 0L) lowFor
+                val noSuccessfulSegmentFor = if (lastMediaLoadActivityMs == 0L) lowFor
                     else now - lastMediaLoadActivityMs
-                if (lowFor >= 5_000L && noMediaActivityFor >= 10_000L &&
+                val activeRequestStalled = loading && lastMediaLoadStartedMs > 0L &&
+                    now - lastMediaLoadStartedMs >= 15_000L
+                val pipelineStalled = activeRequestStalled ||
+                    (!loading && noSuccessfulSegmentFor >= 10_000L) ||
+                    (loading && noSuccessfulSegmentFor >= 20_000L)
+                if (lowFor >= 5_000L && pipelineStalled &&
                     now - lastEmptyBufferRecoveryMs >= 45_000L
                 ) {
                     lastEmptyBufferRecoveryMs = now
@@ -194,7 +201,9 @@ class MainActivity : FragmentActivity() {
                     Log.w(
                         "DAVIX-HLS",
                         "recupero preventivo buffer live; bufferMs=$aheadMs " +
-                            "noMediaActivityMs=$noMediaActivityFor liveOffsetMs=${player.currentLiveOffset}"
+                            "noSuccessfulSegmentMs=$noSuccessfulSegmentFor loading=$loading " +
+                            "requestAgeMs=${if (lastMediaLoadStartedMs > 0L) now - lastMediaLoadStartedMs else -1L} " +
+                            "liveOffsetMs=${player.currentLiveOffset}"
                     )
                     if (player.currentLiveOffset != C.TIME_UNSET) player.seekToDefaultPosition()
                     player.prepare()
@@ -312,7 +321,7 @@ class MainActivity : FragmentActivity() {
                     else -> "type-" + mediaLoadData.dataType
                 }
                 if (mediaLoadData.dataType == C.DATA_TYPE_MEDIA) {
-                    lastMediaLoadActivityMs = android.os.SystemClock.elapsedRealtime()
+                    lastMediaLoadStartedMs = android.os.SystemClock.elapsedRealtime()
                 }
                 Log.d(
                     "DAVIX-HLS",
@@ -331,7 +340,9 @@ class MainActivity : FragmentActivity() {
                     else -> "type-" + mediaLoadData.dataType
                 }
                 if (mediaLoadData.dataType == C.DATA_TYPE_MEDIA) {
-                    lastMediaLoadActivityMs = android.os.SystemClock.elapsedRealtime()
+                    val completedAt = android.os.SystemClock.elapsedRealtime()
+                    lastMediaLoadStartedMs = 0L
+                    lastMediaLoadActivityMs = completedAt
                 }
                 Log.d(
                     "DAVIX-HLS",
@@ -349,7 +360,7 @@ class MainActivity : FragmentActivity() {
                 wasCanceled: Boolean
             ) {
                 if (mediaLoadData.dataType == C.DATA_TYPE_MEDIA) {
-                    lastMediaLoadActivityMs = android.os.SystemClock.elapsedRealtime()
+                    lastMediaLoadStartedMs = 0L
                 }
                 Log.w(
                     "DAVIX-HLS",
@@ -493,6 +504,7 @@ class MainActivity : FragmentActivity() {
             lastEmptyBufferRecoveryMs = 0L
             lowBufferSinceMs = 0L
             lastMediaLoadActivityMs = 0L
+            lastMediaLoadStartedMs = 0L
             val mediaItemBuilder = MediaItem.Builder()
                 .setUri(streamUrl)
                 .setMediaMetadata(MediaMetadata.Builder().setTitle(channelName).build())
