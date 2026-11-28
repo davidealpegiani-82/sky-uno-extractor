@@ -395,9 +395,8 @@ class MainActivity : FragmentActivity() {
                 val retryable = if (httpStatus != null) {
                     // Un 404 su un segmento live può essere transitorio mentre il
                     // provider aggiorna la playlist: ritenta, ma con un limite.
-                    (httpStatus == 404 && playbackRetryCount < 6) ||
-                        httpStatus == 408 || httpStatus == 425 || httpStatus == 429 ||
-                        httpStatus in 500..599
+                    val retryableStatus = httpStatus == 408 || httpStatus == 425 || httpStatus == 429 || httpStatus in 500..599
+                    (httpStatus == 404 && playbackRetryCount < 6) || retryableStatus
                 } else {
                     error.errorCodeName.contains("IO_") ||
                         error.errorCodeName.contains("BEHIND_LIVE_WINDOW")
